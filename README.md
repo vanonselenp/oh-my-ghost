@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://yeachan-heo.github.io/oh-my-codex-website/omx-character-nobg.png" alt="oh-my-codex character" width="280">
   <br>
-  <em>Start Codex stronger, then let OMX add better prompts, workflows, and runtime help when the work grows.</em>
+  <em>Start your AI CLI stronger, then let OMX add better prompts, workflows, and runtime help when the work grows.</em>
 </p>
 
 [![npm version](https://img.shields.io/npm/v/oh-my-codex)](https://www.npmjs.com/package/oh-my-codex)
@@ -14,17 +14,17 @@
 **Website:** https://yeachan-heo.github.io/oh-my-codex-website/  
 **Docs:** [Getting Started](./docs/getting-started.html) · [Agents](./docs/agents.html) · [Skills](./docs/skills.html) · [Integrations](./docs/integrations.html) · [Demo](./DEMO.md) · [OpenClaw guide](./docs/openclaw-integration.md)
 
-OMX is a workflow layer for [OpenAI Codex CLI](https://github.com/openai/codex).
+OMX is a workflow layer for AI coding CLIs.
 
-It keeps Codex as the execution engine and makes it easier to:
-- start a stronger Codex session by default
+It works with [Codex](https://github.com/openai/codex), [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://github.com/opencode-ai/opencode), and Gemini CLI as execution engines, and makes it easier to:
+- start a stronger session by default
 - run one consistent workflow from clarification to completion
 - invoke the canonical skills with `$deep-interview`, `$ralplan`, `$team`, and `$ralph`
 - keep project guidance, plans, logs, and state in `.omx/`
 
 ## Recommended default flow
 
-If you want the default OMX experience, start here:
+If you want the default OMX experience with Codex, start here:
 
 ```bash
 npm install -g @openai/codex oh-my-codex
@@ -46,21 +46,24 @@ Start OMX strongly, clarify first when needed, approve the plan, then choose `$t
 
 ## What OMX is for
 
-Use OMX if you already like Codex and want a better day-to-day runtime around it:
+Use OMX if you already like an AI coding CLI and want a better day-to-day runtime around it:
 - a standard workflow built around `$deep-interview`, `$ralplan`, `$team`, and `$ralph`
 - specialist roles and supporting skills when the task needs them
-- project guidance through scoped `AGENTS.md`
+- project guidance through scoped `AGENTS.md` or `CLAUDE.md`
 - durable state under `.omx/` for plans, logs, memory, and mode tracking
 
-If you want plain Codex with no extra workflow layer, you probably do not need OMX.
+If you want plain CLI usage with no extra workflow layer, you probably do not need OMX.
 
 ## Quick start
 
 ### Requirements
 
 - Node.js 20+
-- Codex CLI installed: `npm install -g @openai/codex`
-- Codex auth configured
+- At least one supported CLI execution engine:
+  - Codex: `npm install -g @openai/codex`
+  - Claude Code: `npm install -g @anthropic-ai/claude-code`
+  - OpenCode: see [opencode-ai/opencode](https://github.com/opencode-ai/opencode)
+  - Gemini CLI: `npm install -g @google/gemini-cli`
 - `tmux` on macOS/Linux if you later want the durable team runtime
 - `psmux` on native Windows if you later want Windows team mode
 
@@ -85,10 +88,10 @@ Use `$team` when the approved plan needs coordinated parallel work, or `$ralph` 
 
 ## A simple mental model
 
-OMX does **not** replace Codex.
+OMX does **not** replace your CLI execution engine.
 
 It adds a better working layer around it:
-- **Codex** does the actual agent work
+- **Your CLI** (Codex, Claude Code, OpenCode, or Gemini) does the actual agent work
 - **OMX role keywords** make useful roles reusable
 - **OMX skills** make common workflows reusable
 - **`.omx/`** stores plans, logs, memory, and runtime state
@@ -132,6 +135,16 @@ omx team 3:executor "fix the failing tests with verification"
 omx team status <team-name>
 omx team resume <team-name>
 omx team shutdown <team-name>
+```
+
+The team runtime supports multiple execution engines. Set `OMX_TEAM_WORKER_CLI` to choose a provider for all workers, or use `OMX_TEAM_WORKER_CLI_MAP` for per-worker assignment:
+
+```bash
+# All workers use Claude Code
+OMX_TEAM_WORKER_CLI=claude omx team 3:executor "..."
+
+# Mixed team: worker 1 uses Codex, worker 2 uses Claude Code, worker 3 uses OpenCode
+OMX_TEAM_WORKER_CLI_MAP=codex,claude,opencode omx team 3:executor "..."
 ```
 
 ### Setup, doctor, and HUD
