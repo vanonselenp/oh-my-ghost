@@ -1,0 +1,262 @@
+{
+  "project": "oh-my-codex",
+  "branchName": "ralph/cli-provider-abstraction",
+  "description": "CLI Provider Abstraction Layer - Make OMX truly agnostic to the underlying execution CLI (codex, claude, opencode) via a CliProvider interface and provider registry",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define the CliProvider interface and capability types",
+      "description": "As a contributor adding a new CLI backend, I need a single interface that tells me exactly what to implement so that OMX works with my CLI.",
+      "acceptanceCriteria": [
+        "CliProvider interface defined in src/providers/types.ts",
+        "Interface covers all 6 coupling layers: config home, config format, TUI contract, argument translation, prompt/guidance injection, binary resolution",
+        "CliProviderCapabilities type declares optional features: tui mode ('full' | 'headless'), queue mode, adaptive retry, viewport detection",
+        "TuiContract type defines: submitKeyPresses (number), supportsQueueMode (boolean), supportsAdaptiveRetry (boolean)",
+        "LaunchOpts type defines: bypassApprovals (boolean), model (string), initialPrompt (string), extraArgs (string[])",
+        "OmxConfig type defines provider-agnostic config: mcpServers, reasoningEffort, developerInstructions, model",
+        "Each method/property has JSDoc documenting its purpose and contract",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Build the provider registry",
+      "description": "As the OMX runtime, I need to look up the correct provider by name so that all CLI-specific behavior is routed through the right implementation.",
+      "acceptanceCriteria": [
+        "ProviderRegistry class in src/providers/registry.ts",
+        "register(name, provider), get(name), list(), has(name) methods",
+        "get() throws descriptive error listing available providers when name is not registered",
+        "A default global registry instance is exported",
+        "An initBuiltinProviders() function registers codex, claude, opencode providers",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "CodexProvider - core behavior (paths, binary, args, TUI, guidance)",
+      "description": "As a developer, I need the existing Codex-specific behavior extracted into a provider implementation for paths, binary resolution, launch args, TUI contract, and guidance injection.",
+      "acceptanceCriteria": [
+        "CodexProvider in src/providers/codex.ts implements CliProvider",
+        "configHome() returns ~/.codex/",
+        "projectConfigDir() returns .codex/",
+        "guidanceFile() returns AGENTS.md",
+        "binaryName returns 'codex'",
+        "buildLaunchArgs() includes --dangerously-bypass-approvals-and-sandbox when bypass requested",
+        "TUI contract: submitKeyPresses=2, supportsQueueMode=true, supportsAdaptiveRetry=true",
+        "detectTrustPrompt() matches 'Do you trust the contents of this directory?'",
+        "detectViewport() matches box-drawing chars pattern",
+        "dismissTrustPromptKeys() returns the correct key sequence",
+        "skillsDir() returns ~/.codex/skills/, promptsDir() returns ~/.codex/prompts/",
+        "Provider registered in initBuiltinProviders()",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "CodexProvider - config writer (TOML generation)",
+      "description": "As a developer, I need the CodexProvider to generate native config.toml from the provider-agnostic OmxConfig type.",
+      "acceptanceCriteria": [
+        "CodexProvider.writeConfig(config: OmxConfig) generates ~/.codex/config.toml",
+        "MCP servers written as [mcp_servers.omx_<name>] TOML sections with command, args, enabled, timeout",
+        "model_reasoning_effort key set from config",
+        "developer_instructions key set from config",
+        "Marker comments preserved: 'oh-my-codex (OMX) Shared MCP Registry Sync'",
+        "Existing user config outside OMX markers is preserved on merge",
+        "Unit test: generated TOML matches expected Codex config format",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "ClaudeProvider implementation",
+      "description": "As a developer, I need the existing Claude-specific behavior extracted into a provider implementation.",
+      "acceptanceCriteria": [
+        "ClaudeProvider in src/providers/claude.ts implements CliProvider",
+        "configHome() returns ~/.claude/",
+        "projectConfigDir() returns .claude/",
+        "guidanceFile() returns CLAUDE.md",
+        "binaryName returns 'claude'",
+        "buildLaunchArgs() includes --dangerously-skip-permissions when bypass requested",
+        "TUI contract: submitKeyPresses=1, supportsQueueMode=false, supportsAdaptiveRetry=false",
+        "detectTrustPrompt() matches 'Bypass Permissions mode'",
+        "writeConfig(config) generates native settings.json with Claude Code MCP schema",
+        "Provider registered in initBuiltinProviders()",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "OpenCodeProvider implementation (headless)",
+      "description": "As a developer, I need an opencode provider so OMX can use opencode as an execution engine, starting with headless TUI mode.",
+      "acceptanceCriteria": [
+        "OpenCodeProvider in src/providers/opencode.ts implements CliProvider",
+        "configHome() returns ~/.opencode/",
+        "projectConfigDir() returns .opencode/",
+        "guidanceFile() returns AGENTS.md or opencode's native instruction file",
+        "binaryName returns 'opencode'",
+        "buildLaunchArgs() handles opencode's CLI flags for model selection",
+        "TUI capabilities declared as 'headless'",
+        "writeConfig(config) generates native opencode.json",
+        "Provider registered in initBuiltinProviders()",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "opencode TUI behavior may be unknown at implementation time - headless is the safe default. Refine TUI support in a follow-up."
+    },
+    {
+      "id": "US-007",
+      "title": "Headless fallback mode for TUI interaction",
+      "description": "As a provider author, I need a way to declare that my CLI doesn't have a TUI so OMX falls back to pipe-based interaction.",
+      "acceptanceCriteria": [
+        "CliProviderCapabilities.tui accepts 'full' or 'headless'",
+        "When tui is 'headless', buildWorkerSubmitPlan returns: single key press, no queue, no retry",
+        "Headless mode skips viewport detection (detectViewport returns false)",
+        "Headless mode skips trust prompt handling (detectTrustPrompt returns false)",
+        "A headless provider can still function for basic team orchestration (worker launch, task dispatch, completion)",
+        "Unit test: headless submit plan returns expected degraded values",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Refactor paths.ts to delegate to providers",
+      "description": "As the OMX core, I need path resolution to go through the provider so I stop assuming ~/.codex/ everywhere.",
+      "acceptanceCriteria": [
+        "codexHome() replaced with cliConfigHome(provider) that delegates to provider.configHome()",
+        "codexConfigPath() replaced with cliConfigPath(provider)",
+        "codexPromptsDir() replaced with cliPromptsDir(provider) delegating to provider.promptsDir()",
+        "codexAgentsDir() replaced with cliAgentsDir(provider)",
+        "projectCodexAgentsDir() replaced with projectAgentsDir(provider) using provider.projectConfigDir()",
+        "userSkillsDir() and projectSkillsDir() delegate to provider.skillsDir()",
+        "All call sites in the codebase updated to pass or resolve the active provider",
+        "No remaining references to ~/.codex/ outside of CodexProvider",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Refactor config generator - extract OmxConfig intermediate and wire providers",
+      "description": "As the OMX setup system, I need config generation to build a provider-agnostic OmxConfig and delegate serialization to the provider.",
+      "acceptanceCriteria": [
+        "generator.ts refactored: core logic builds an OmxConfig object (MCP servers, reasoning effort, developer instructions, model)",
+        "mergeConfig() replaced with buildOmxConfig() that returns OmxConfig",
+        "Provider's writeConfig(config) called to serialize to native format",
+        "Provider's registerMcpServer() handles MCP registration",
+        "omx setup resolves active provider before config generation",
+        "Codex TOML output matches current format (no regression)",
+        "Claude JSON output matches Claude Code's settings.json schema",
+        "No remaining TOML-specific logic in generator.ts outside CodexProvider",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "This is the largest single refactor (~700 lines in generator.ts). Focus on extracting the intermediate representation first, then wiring."
+    },
+    {
+      "id": "US-010",
+      "title": "Refactor tmux-session.ts - launch args and submit plan",
+      "description": "As the team runtime, I need worker launch and submit to use provider methods instead of CLI-specific switch statements.",
+      "acceptanceCriteria": [
+        "translateWorkerLaunchArgsForCli() replaced with provider.buildLaunchArgs()",
+        "buildWorkerSubmitPlan() reads from provider.tui (submitKeyPresses, supportsQueueMode, supportsAdaptiveRetry)",
+        "buildWorkerProcessLaunchSpec() uses provider.binaryName for binary resolution",
+        "buildWorkerStartupCommand() delegates to provider for CLI-specific env and flags",
+        "No remaining switch(workerCli) for launch or submit logic",
+        "Existing team launch tests still pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Refactor tmux-session.ts - pane detection and trust prompts",
+      "description": "As the team runtime, I need pane viewport detection and trust prompt handling to use provider methods.",
+      "acceptanceCriteria": [
+        "paneHasTrustPrompt() replaced with provider.detectTrustPrompt(paneContent)",
+        "paneHasClaudeBypassPermissionsPrompt() removed - absorbed into provider.detectTrustPrompt()",
+        "dismissTrustPromptIfPresent() uses provider.dismissTrustPromptKeys()",
+        "dismissClaudeBypassPermissionsPromptIfPresent() removed - absorbed into provider.dismissTrustPrompt()",
+        "paneShowsCodexViewport() replaced with provider.detectViewport(paneContent)",
+        "No remaining if (workerCli === 'codex') or if (workerCli === 'claude') in pane detection",
+        "Existing pane detection tests still pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Refactor worker bootstrap to use provider guidance injection",
+      "description": "As the worker initialization system, I need guidance injection to go through the provider so each CLI gets instructions in the format it understands.",
+      "acceptanceCriteria": [
+        "worker-bootstrap.ts calls provider.injectGuidance() instead of writing directly to AGENTS.md",
+        "Provider determines target file (AGENTS.md, CLAUDE.md, etc.) via guidanceFile()",
+        "Skill loading uses provider.skillsDir() and provider.promptsDir()",
+        "Worker overlay markers use provider-aware format",
+        "No remaining hardcoded references to AGENTS.md for guidance injection in worker-bootstrap.ts",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Refactor runtime-cli.ts to use provider registry",
+      "description": "As the CLI resolution layer, I need to validate and resolve providers through the registry instead of hardcoded names.",
+      "acceptanceCriteria": [
+        "normalizeAgentTypes() validates against registry.has(name) instead of hardcoded 'codex' | 'claude' | 'gemini' list",
+        "resolveTeamWorkerCli() uses registry for model-to-provider mapping",
+        "OMX_TEAM_WORKER_CLI and OMX_TEAM_WORKER_CLI_MAP env vars accept any registered provider name",
+        "Error messages list available providers from registry.list()",
+        "TeamWorkerCli type import replaced with string validated against registry",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Update omx setup and doctor for multi-provider support",
+      "description": "As a user, I need omx setup to configure whichever CLI provider I'm using, not just Codex.",
+      "acceptanceCriteria": [
+        "omx setup accepts --provider <name> flag",
+        "When no --provider given, auto-detects installed CLIs from PATH",
+        "Setup installs skills/prompts into provider.skillsDir() and provider.promptsDir()",
+        "Setup generates config via provider.writeConfig()",
+        "omx setup --provider codex --provider claude configures both in one run",
+        "omx doctor validates the active provider's binary availability and config integrity",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
