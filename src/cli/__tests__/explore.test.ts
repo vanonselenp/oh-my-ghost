@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { chmod, mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
@@ -393,7 +393,11 @@ describe('resolveExploreHarnessCommand', () => {
       await writeFile(binaryPath, '#!/bin/sh\necho hydrated-explore\n');
       await chmod(binaryPath, 0o755);
 
-      const archivePath = join(assetRoot, 'omx-explore-harness-x86_64-unknown-linux-musl.tar.gz');
+      // Use current platform/arch so the manifest asset is matched on any OS
+      const manifestPlatform = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'windows' : 'linux';
+      const manifestArch = process.arch === 'arm64' ? 'arm64' : 'x64';
+      const archiveFilename = `omx-explore-harness-test-${manifestPlatform}-${manifestArch}.tar.gz`;
+      const archivePath = join(assetRoot, archiveFilename);
       const archive = spawnSync('tar', ['-czf', archivePath, '-C', stagingDir, packagedExploreHarnessBinaryName()], { encoding: 'utf-8' });
       assert.equal(archive.status, 0, archive.stderr || archive.stdout);
       const archiveBuffer = await readFile(archivePath);
@@ -427,14 +431,14 @@ describe('resolveExploreHarnessCommand', () => {
           assets: [{
             product: 'omx-explore-harness',
             version: '0.8.15',
-            platform: 'linux',
-            arch: 'x64',
-            archive: 'omx-explore-harness-x86_64-unknown-linux-musl.tar.gz',
+            platform: manifestPlatform,
+            arch: manifestArch,
+            archive: archiveFilename,
             binary: 'omx-explore-harness',
             binary_path: 'omx-explore-harness',
             sha256: checksum,
             size: archiveBuffer.length,
-            download_url: `${server.baseUrl}/omx-explore-harness-x86_64-unknown-linux-musl.tar.gz`,
+            download_url: `${server.baseUrl}/${archiveFilename}`,
           }],
         }, null, 2));
 
@@ -694,7 +698,7 @@ describe('exploreCommand', () => {
   });
 
   it('launches an env-node codex binary while keeping model shell commands allowlisted', async () => {
-    const wd = await mkdtemp(join(tmpdir(), 'omx-explore-harness-e2e-'));
+    const wd = realpathSync(await mkdtemp(join(tmpdir(), 'omx-explore-harness-e2e-')));
     try {
       await withPackagedExploreHarnessHidden(async () => {
         const capturePath = join(wd, 'capture.json');
@@ -724,7 +728,7 @@ describe('exploreCommand', () => {
   });
 
   it('supports --prompt-file end-to-end with the harness', async () => {
-    const wd = await mkdtemp(join(tmpdir(), 'omx-explore-harness-prompt-file-'));
+    const wd = realpathSync(await mkdtemp(join(tmpdir(), 'omx-explore-harness-prompt-file-')));
     try {
       await withPackagedExploreHarnessHidden(async () => {
         const capturePath = join(wd, 'capture.json');

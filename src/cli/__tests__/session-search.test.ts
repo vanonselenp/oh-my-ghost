@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -47,7 +48,7 @@ describe('parseSessionSearchArgs', () => {
 
 describe('omx session search', () => {
   it('prints structured JSON results for matching transcripts', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'omx-session-search-cli-'));
+    const cwd = realpathSync(await mkdtemp(join(tmpdir(), 'omx-session-search-cli-')));
     const codexHomeDir = join(cwd, '.codex-home');
     try {
       await writeRollout(codexHomeDir, '2026-03-10T12:00:00.000Z', 'rollout-2026-03-10T12-00-00-session-a.jsonl', [

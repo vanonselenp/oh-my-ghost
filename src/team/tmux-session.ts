@@ -20,6 +20,8 @@ import {
 } from '../scripts/tmux-hook-engine.js';
 import { sleep, sleepSync } from '../utils/sleep.js';
 import { classifySpawnError, resolveCommandPathForPlatform, spawnPlatformCommandSync } from '../utils/platform-command.js';
+import { globalRegistry } from '../providers/registry.js';
+import type { CliProvider } from '../providers/types.js';
 
 const execFileAsync = promisify(execFile);
 import { HUD_RESIZE_RECONCILE_DELAY_SECONDS, HUD_TMUX_TEAM_HEIGHT_LINES } from '../hud/constants.js';
@@ -48,15 +50,24 @@ const OMX_TEAM_WORKER_CLI_MAP_ENV = 'OMX_TEAM_WORKER_CLI_MAP';
 const OMX_TEAM_WORKER_LAUNCH_MODE_ENV = 'OMX_TEAM_WORKER_LAUNCH_MODE';
 const OMX_TEAM_AUTO_INTERRUPT_RETRY_ENV = 'OMX_TEAM_AUTO_INTERRUPT_RETRY';
 const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
-const GEMINI_PROMPT_INTERACTIVE_FLAG = '-i';
-const GEMINI_APPROVAL_MODE_FLAG = '--approval-mode';
-const GEMINI_APPROVAL_MODE_YOLO = 'yolo';
 const OMX_LEADER_NODE_PATH_ENV = 'OMX_LEADER_NODE_PATH';
 const OMX_LEADER_CLI_PATH_ENV = 'OMX_LEADER_CLI_PATH';
 
 export type TeamWorkerCli = 'codex' | 'claude' | 'gemini';
 type TeamWorkerCliMode = 'auto' | TeamWorkerCli;
 export type TeamWorkerLaunchMode = 'interactive' | 'prompt';
+
+/**
+ * Resolve the CliProvider for a given worker CLI name.
+ * Falls back to looking up from the global registry; returns null if not registered.
+ */
+function resolveProviderForCli(workerCli: string): CliProvider | null {
+  try {
+    return globalRegistry.get(workerCli);
+  } catch {
+    return null;
+  }
+}
 
 export interface WorkerSubmitPlan {
   shouldInterrupt: boolean;
@@ -456,8 +467,13 @@ function hasModelInstructionsOverride(args: string[]): boolean {
 function normalizeTeamWorkerCliMode(raw: string | undefined, sourceEnv: string = OMX_TEAM_WORKER_CLI_ENV): TeamWorkerCliMode {
   const normalized = String(raw ?? 'auto').trim().toLowerCase();
   if (normalized === '' || normalized === 'auto') return 'auto';
-  if (normalized === 'codex' || normalized === 'claude' || normalized === 'gemini') return normalized;
-  throw new Error(`Invalid ${sourceEnv} value "${raw}". Expected: auto, codex, claude, gemini`);
+  // Accept any registered provider name, plus legacy hardcoded names
+  if (normalized === 'codex' || normalized === 'claude' || normalized === 'gemini' || globalRegistry.has(normalized)) {
+    return normalized as TeamWorkerCliMode;
+  }
+  const available = globalRegistry.list();
+  const expected = available.length > 0 ? `auto, ${available.join(', ')}` : 'auto, codex, claude, gemini';
+  throw new Error(`Invalid ${sourceEnv} value "${raw}". Expected: ${expected}`);
 }
 
 export function resolveTeamWorkerLaunchMode(
@@ -527,7 +543,7 @@ export function resolveTeamWorkerCliPlan(
   if (entries.length === 0 || entries.every((part) => part.length === 0)) {
     throw new Error(
       `Invalid ${OMX_TEAM_WORKER_CLI_MAP_ENV} value "${env[OMX_TEAM_WORKER_CLI_MAP_ENV]}". `
-        + `Expected comma-separated values: auto|codex|claude|gemini.`,
+        + `Expected comma-separated values: auto|${globalRegistry.list().join('|') || 'codex|claude|gemini'}.`,
     );
   }
   if (entries.some((part) => part.length === 0)) {
@@ -551,19 +567,28 @@ export function resolveTeamWorkerCliPlan(
 }
 
 export function translateWorkerLaunchArgsForCli(workerCli: TeamWorkerCli, args: string[], initialPrompt?: string): string[] {
-  if (workerCli === 'codex') return [...args];
-  if (workerCli === 'gemini') {
-    const model = extractModelOverride(args);
-    const geminiModel = model && /gemini/i.test(model) ? model : null;
-    const translatedArgs = [GEMINI_APPROVAL_MODE_FLAG, GEMINI_APPROVAL_MODE_YOLO];
-    const trimmedPrompt = initialPrompt?.trim();
-    if (trimmedPrompt) translatedArgs.push(GEMINI_PROMPT_INTERACTIVE_FLAG, trimmedPrompt);
-    if (geminiModel) translatedArgs.push(MODEL_FLAG, geminiModel);
-    return translatedArgs;
+  // Delegate to the provider if registered
+  const provider = resolveProviderForCli(workerCli);
+  if (provider) {
+    const isCodex = workerCli === 'codex';
+    // For codex: bypass only when explicitly requested (flag in args or process.argv).
+    // For all other providers: team workers always need bypass approvals.
+    const wantsBypass = isCodex
+      ? (args.includes(CODEX_BYPASS_FLAG) || process.argv.includes(CODEX_BYPASS_FLAG) || process.argv.includes(MADMAX_FLAG))
+      : true;
+    return provider.buildLaunchArgs({
+      bypassApprovals: wantsBypass,
+      // For codex, model is already embedded in extraArgs — don't pass separately to avoid duplication.
+      // For other providers, args are not passed through so model must be extracted explicitly.
+      model: isCodex ? undefined : (extractModelOverride(args) ?? undefined),
+      initialPrompt: initialPrompt?.trim() || undefined,
+      extraArgs: isCodex ? [...args] : [],
+    });
   }
 
-  // Claude workers must launch with exactly one permissions bypass flag.
-  // All other launch args are dropped to avoid Codex-only flags and model/config overrides.
+  // Legacy fallback for codex (pass args through unchanged)
+  if (workerCli === 'codex') return [...args];
+
   void args;
   return [CLAUDE_SKIP_PERMISSIONS_FLAG];
 }
@@ -600,10 +625,16 @@ export function assertTeamWorkerCliBinaryAvailable(
   workerCli: TeamWorkerCli,
   existsImpl: (binary: string) => boolean = commandExists,
 ): void {
-  if (existsImpl(workerCli)) return;
+  // Resolve the binary name via provider if registered, then check using existsImpl
+  // (so tests can mock binary availability without depending on the real PATH).
+  const provider = resolveProviderForCli(workerCli);
+  const binaryName = provider?.binaryName ?? workerCli;
+  if (existsImpl(binaryName)) return;
+
+  const availableProviders = globalRegistry.list().join('|') || 'codex|claude|gemini|opencode';
   throw new Error(
     `Selected team worker CLI "${workerCli}" is not available on PATH. `
-      + `Install "${workerCli}" or set ${OMX_TEAM_WORKER_CLI_ENV}=codex|claude|gemini.`,
+      + `Install "${workerCli}" or set ${OMX_TEAM_WORKER_CLI_ENV}=${availableProviders}.`,
   );
 }
 
@@ -675,7 +706,10 @@ export function buildWorkerProcessLaunchSpec(
     ? [...cliLaunchArgs, CODEX_BYPASS_FLAG]
     : cliLaunchArgs;
 
-  const resolvedCliPath = resolveAbsoluteBinaryPath(workerCli);
+  // Use provider's binaryName if available, otherwise fall back to workerCli string
+  const provider = resolveProviderForCli(workerCli);
+  const binaryName = provider?.binaryName ?? workerCli;
+  const resolvedCliPath = resolveAbsoluteBinaryPath(binaryName);
   const workerEnv: Record<string, string> = {
     OMX_TEAM_WORKER: `${teamName}/worker-${workerIndex}`,
     [OMX_LEADER_NODE_PATH_ENV]: resolveLeaderNodePath(),
@@ -1029,41 +1063,58 @@ function paneTarget(sessionName: string, workerIndex: number, workerPaneId?: str
 export const paneIsBootstrapping = sharedPaneIsBootstrapping;
 export const paneLooksReady = sharedPaneLooksReady;
 
+/**
+ * Detect any trust/permissions prompt in the pane content by checking
+ * all registered providers. Returns the matching provider, or null.
+ */
+function detectTrustPromptViaProviders(captured: string, workerCli?: string): CliProvider | null {
+  // Check the specific worker CLI's provider first
+  if (workerCli) {
+    const provider = resolveProviderForCli(workerCli);
+    if (provider?.detectTrustPrompt(captured)) return provider;
+  }
+  // Then check all registered providers
+  for (const name of globalRegistry.list()) {
+    const provider = globalRegistry.get(name);
+    if (provider.detectTrustPrompt(captured)) return provider;
+  }
+  return null;
+}
+
+/**
+ * Dismiss a trust/permissions prompt by sending the correct key sequence
+ * for whichever provider matched. Returns true if dismissed.
+ */
+function dismissDetectedTrustPrompt(target: string, provider: CliProvider): boolean {
+  const keys = provider.dismissTrustPromptKeys();
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].length === 1) {
+      // Single character: send as literal
+      runTmux(['send-keys', '-t', target, '-l', '--', keys[i]]);
+    } else {
+      // Key name (e.g. "C-m"): send as key
+      runTmux(['send-keys', '-t', target, keys[i]]);
+    }
+    if (i < keys.length - 1) sleepFractionalSeconds(0.12);
+  }
+  return true;
+}
+
+// Legacy shims — delegate to provider-based detection
 function paneHasTrustPrompt(captured: string): boolean {
-  const lines = captured
-    .split('\n')
-    .map((line) => line.replace(/\r/g, '').trim())
-    .filter((line) => line.length > 0);
-  const tail = lines.slice(-12);
-  const hasQuestion = tail.some((line) => /Do you trust the contents of this directory\?/i.test(line));
-  const hasActiveChoices = tail.some((line) => /Yes,\s*continue|No,\s*quit|Press enter to continue/i.test(line));
-  return hasQuestion && hasActiveChoices;
+  return detectTrustPromptViaProviders(captured) !== null;
 }
 
 function paneHasClaudeBypassPermissionsPrompt(captured: string): boolean {
-  const lines = captured
-    .split('\n')
-    .map((line) => line.replace(/\r/g, '').trim())
-    .filter((line) => line.length > 0);
-  const tail = lines.slice(-20);
-  const hasWarning = tail.some((line) => /Bypass Permissions mode/i.test(line));
-  const hasChoices = tail.some((line) => /No,\s*exit/i.test(line))
-    && tail.some((line) => /Yes,\s*I\s*accept/i.test(line))
-    && tail.some((line) => /Enter\s*to\s*confirm/i.test(line));
-  return hasWarning && hasChoices;
-}
-
-function acceptClaudeBypassPermissionsPrompt(target: string): void {
-  runTmux(['send-keys', '-t', target, '-l', '--', '2']);
-  sleepFractionalSeconds(0.12);
-  runTmux(['send-keys', '-t', target, 'C-m']);
+  const provider = resolveProviderForCli('claude');
+  return provider?.detectTrustPrompt(captured) ?? false;
 }
 
 function dismissClaudeBypassPermissionsPromptIfPresent(target: string, captured: string): boolean {
   if (process.env.OMX_TEAM_AUTO_ACCEPT_BYPASS === '0') return false;
-  if (!paneHasClaudeBypassPermissionsPrompt(captured)) return false;
-  acceptClaudeBypassPermissionsPrompt(target);
-  return true;
+  const provider = resolveProviderForCli('claude');
+  if (!provider?.detectTrustPrompt(captured)) return false;
+  return dismissDetectedTrustPrompt(target, provider);
 }
 
 export const paneHasActiveTask = sharedPaneHasActiveTask;
@@ -1122,6 +1173,21 @@ export function buildWorkerSubmitPlan(
   allowAdaptiveRetry: boolean,
 ): WorkerSubmitPlan {
   const queueRequested = strategy === 'queue' || (strategy === 'auto' && paneBusyAtStart);
+
+  // Use provider TUI contract if available
+  const provider = resolveProviderForCli(workerCli);
+  if (provider) {
+    const { tui } = provider;
+    return {
+      shouldInterrupt: strategy === 'interrupt',
+      queueFirstRound: tui.supportsQueueMode && queueRequested,
+      rounds: 6,
+      submitKeyPressesPerRound: tui.submitKeyPresses,
+      allowAdaptiveRetry: tui.supportsAdaptiveRetry && allowAdaptiveRetry,
+    };
+  }
+
+  // Legacy fallback
   return {
     shouldInterrupt: strategy === 'interrupt',
     queueFirstRound: workerCli === 'codex' && queueRequested,
@@ -1281,12 +1347,11 @@ export function dismissTrustPromptIfPresent(
   const target = paneTarget(sessionName, workerIndex, workerPaneId);
   const result = runTmux(sharedBuildVisibleCapturePaneArgv(target));
   if (!result.ok) return false;
-  if (!paneHasTrustPrompt(result.stdout)) return false;
-  // Trust prompt detected; send C-m twice to dismiss (trust + follow-up splash)
-  runTmux(['send-keys', '-t', target, 'C-m']);
-  sleepFractionalSeconds(0.12);
-  runTmux(['send-keys', '-t', target, 'C-m']);
-  return true;
+
+  // Use provider-based detection: checks all registered providers
+  const matchedProvider = detectTrustPromptViaProviders(result.stdout);
+  if (!matchedProvider) return false;
+  return dismissDetectedTrustPrompt(target, matchedProvider);
 }
 
 export const normalizeTmuxCapture = sharedNormalizeTmuxCapture;

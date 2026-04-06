@@ -7,8 +7,9 @@ import {
   getFixLoopInstructions,
   getVerificationInstructions,
 } from "../verification/verifier.js";
-import { codexHome, listInstalledSkillDirectories } from "../utils/paths.js";
+import { codexHome, cliConfigHome, listInstalledSkillDirectories } from "../utils/paths.js";
 import { sleep } from "../utils/sleep.js";
+import type { CliProvider } from "../providers/types.js";
 
 const TEAM_OVERLAY_START = "<!-- OMX:TEAM:WORKER:START -->";
 const TEAM_OVERLAY_END = "<!-- OMX:TEAM:WORKER:END -->";
@@ -27,6 +28,18 @@ interface WorkerRootAgentsOptions {
   teamStateRoot: string;
   leaderCwd: string;
   worktreePath: string;
+  /** CLI provider for this worker. Determines guidance file (AGENTS.md vs CLAUDE.md etc). */
+  provider?: CliProvider;
+}
+
+/** Get the guidance filename for the given provider, defaulting to AGENTS.md. */
+function guidanceFileName(provider?: CliProvider): string {
+  return provider?.guidanceFile() ?? "AGENTS.md";
+}
+
+/** Get the CLI config home for the given provider, defaulting to codexHome(). */
+function workerConfigHome(provider?: CliProvider): string {
+  return provider ? cliConfigHome(provider) : codexHome();
 }
 
 interface WorkerRootAgentsBackup {
@@ -171,8 +184,9 @@ async function ensureGitInfoExcludePattern(
 export async function writeWorkerWorktreeRootAgentsFile(
   options: WorkerRootAgentsOptions,
 ): Promise<string> {
-  const agentsPath = join(options.worktreePath, "AGENTS.md");
-  const tracked = isTracked(options.worktreePath, "AGENTS.md");
+  const guidanceFile = guidanceFileName(options.provider);
+  const agentsPath = join(options.worktreePath, guidanceFile);
+  const tracked = isTracked(options.worktreePath, guidanceFile);
   const existed = existsSync(agentsPath);
   const previousContent = existed
     ? await readFile(agentsPath, "utf-8")
@@ -181,7 +195,7 @@ export async function writeWorkerWorktreeRootAgentsFile(
 
   if (tracked) {
     try {
-      execFileSync("git", ["update-index", "--skip-worktree", "AGENTS.md"], {
+      execFileSync("git", ["update-index", "--skip-worktree", guidanceFile], {
         cwd: options.worktreePath,
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "pipe"],
@@ -192,7 +206,7 @@ export async function writeWorkerWorktreeRootAgentsFile(
       skipWorktreeApplied = false;
     }
   } else {
-    await ensureGitInfoExcludePattern(options.worktreePath, "AGENTS.md");
+    await ensureGitInfoExcludePattern(options.worktreePath, guidanceFile);
   }
 
   const backup: WorkerRootAgentsBackup = {
@@ -222,8 +236,10 @@ export async function removeWorkerWorktreeRootAgentsFile(
   workerName: string,
   teamStateRoot: string,
   worktreePath: string,
+  provider?: CliProvider,
 ): Promise<void> {
-  const agentsPath = join(worktreePath, "AGENTS.md");
+  const guidanceFile = guidanceFileName(provider);
+  const agentsPath = join(worktreePath, guidanceFile);
   const backupPath = buildWorkerRootAgentsBackupPath(
     teamStateRoot,
     teamName,
@@ -246,7 +262,7 @@ export async function removeWorkerWorktreeRootAgentsFile(
 
   if (backup.tracked && backup.skipWorktreeApplied) {
     try {
-      execFileSync("git", ["update-index", "--no-skip-worktree", "AGENTS.md"], {
+      execFileSync("git", ["update-index", "--no-skip-worktree", guidanceFile], {
         cwd: worktreePath,
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "pipe"],
@@ -439,10 +455,13 @@ export async function writeTeamWorkerInstructionsFile(
   teamName: string,
   cwd: string,
   overlay: string,
+  provider?: CliProvider,
 ): Promise<string> {
   const baseParts: string[] = [];
-  const userAgentsPath = join(codexHome(), "AGENTS.md");
-  const sourcePaths = [userAgentsPath, join(cwd, "AGENTS.md")];
+  const guidanceFile = guidanceFileName(provider);
+  const configHomeDir = workerConfigHome(provider);
+  const userAgentsPath = join(configHomeDir, guidanceFile);
+  const sourcePaths = [userAgentsPath, join(cwd, guidanceFile)];
   const seenPaths = new Set<string>();
   const installedSkills = await listInstalledSkillDirectories(cwd);
   const projectSkillNames = new Set(
@@ -501,7 +520,9 @@ export async function writeWorkerRoleInstructionsFile(
   baseInstructionsPath: string,
   workerRole: string,
   rolePromptContent: string,
+  provider?: CliProvider,
 ): Promise<string> {
+  const guidanceFile = guidanceFileName(provider);
   const base = await readFile(baseInstructionsPath, "utf-8").catch(() => "");
   const roleOverlay = `
 <!-- OMX:TEAM:ROLE:START -->
@@ -526,7 +547,7 @@ ${roleOverlay}`
     teamName,
     "workers",
     workerName,
-    "AGENTS.md",
+    guidanceFile,
   );
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, composed);

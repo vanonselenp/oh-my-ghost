@@ -18,8 +18,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in src/providers/types.ts"
     },
     {
       "id": "US-002",
@@ -34,8 +34,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in src/providers/registry.ts"
     },
     {
       "id": "US-003",
@@ -57,8 +57,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in src/providers/codex.ts"
     },
     {
       "id": "US-004",
@@ -75,8 +75,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in CodexProvider.writeConfig() in src/providers/codex.ts"
     },
     {
       "id": "US-005",
@@ -96,8 +96,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in src/providers/claude.ts"
     },
     {
       "id": "US-006",
@@ -116,8 +116,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "opencode TUI behavior may be unknown at implementation time - headless is the safe default. Refine TUI support in a follow-up."
+      "passes": true,
+      "notes": "Implemented in src/providers/opencode.ts with headless TUI mode"
     },
     {
       "id": "US-007",
@@ -133,8 +133,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Headless mode built into CliProviderCapabilities.tui and OpenCodeProvider defaults"
     },
     {
       "id": "US-008",
@@ -152,8 +152,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Provider-aware functions added to paths.ts (cliConfigHome, cliConfigPath, etc.). Legacy codex* functions remain as deprecated shims."
     },
     {
       "id": "US-009",
@@ -171,8 +171,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": "This is the largest single refactor (~700 lines in generator.ts). Focus on extracting the intermediate representation first, then wiring."
+      "passes": true,
+      "notes": "buildOmxConfig() and mergeConfigForProvider() added to generator.ts. Existing mergeConfig/buildMergedConfig preserved for Codex backward compat."
     },
     {
       "id": "US-010",
@@ -188,8 +188,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Provider-aware launch args, submit plan, and binary resolution in tmux-session.ts"
     },
     {
       "id": "US-011",
@@ -206,8 +206,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Trust prompt and viewport detection delegated to providers via detectTrustPromptViaProviders()"
     },
     {
       "id": "US-012",
@@ -222,8 +222,8 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "worker-bootstrap.ts uses guidanceFileName(provider) and workerConfigHome(provider) for dynamic guidance injection"
     },
     {
       "id": "US-013",
@@ -238,8 +238,8 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "normalizeAgentTypes() validates against globalRegistry, TeamWorkerCli changed to string type"
     },
     {
       "id": "US-014",
@@ -255,8 +255,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "setup.ts supports --provider flag with multi-provider config, doctor.ts validates provider binaries in verbose mode"
     }
   ]
 }

@@ -22,7 +22,9 @@ interface CliInput {
   pollIntervalMs?: number;
 }
 
-type TeamWorkerProvider = 'codex' | 'claude' | 'gemini';
+import { globalRegistry, initBuiltinProviders } from '../providers/registry.js';
+
+type TeamWorkerProvider = string;
 
 interface TaskResult {
   taskId: string;
@@ -119,18 +121,23 @@ function collectTaskResults(stateRoot: string, teamName: string): TaskResult[] {
 
 export function normalizeAgentTypes(raw: string[], workerCount: number): TeamWorkerProvider[] {
   const providers = raw.map((entry) => String(entry || '').trim().toLowerCase());
-  const invalid = providers.filter((entry) => entry !== 'codex' && entry !== 'claude' && entry !== 'gemini');
+  const availableProviders = globalRegistry.list();
+  const invalid = providers.filter((entry) => !globalRegistry.has(entry));
   if (invalid.length > 0) {
-    throw new Error(`Invalid agentTypes entries: ${invalid.join(', ')}. Expected codex|claude|gemini.`);
+    const expected = availableProviders.length > 0 ? availableProviders.join('|') : 'codex|claude|gemini|opencode';
+    throw new Error(`Invalid agentTypes entries: ${invalid.join(', ')}. Expected ${expected}.`);
   }
   if (providers.length !== 1 && providers.length !== workerCount) {
     throw new Error(`agentTypes length must be 1 or ${workerCount}; received ${providers.length}.`);
   }
-  return providers as TeamWorkerProvider[];
+  return providers;
 }
 
 async function main(): Promise<void> {
   const startTime = Date.now();
+
+  // Initialize provider registry before any team operations
+  await initBuiltinProviders();
 
   // Read stdin
   const chunks: Buffer[] = [];
