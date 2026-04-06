@@ -49,11 +49,10 @@ const OMX_TEAM_WORKER_CLI_ENV = 'OMX_TEAM_WORKER_CLI';
 const OMX_TEAM_WORKER_CLI_MAP_ENV = 'OMX_TEAM_WORKER_CLI_MAP';
 const OMX_TEAM_WORKER_LAUNCH_MODE_ENV = 'OMX_TEAM_WORKER_LAUNCH_MODE';
 const OMX_TEAM_AUTO_INTERRUPT_RETRY_ENV = 'OMX_TEAM_AUTO_INTERRUPT_RETRY';
-const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 const OMX_LEADER_NODE_PATH_ENV = 'OMX_LEADER_NODE_PATH';
 const OMX_LEADER_CLI_PATH_ENV = 'OMX_LEADER_CLI_PATH';
 
-export type TeamWorkerCli = 'codex' | 'claude' | 'gemini';
+export type TeamWorkerCli = 'codex' | 'claude' | 'opencode' | 'gemini';
 type TeamWorkerCliMode = 'auto' | TeamWorkerCli;
 export type TeamWorkerLaunchMode = 'interactive' | 'prompt';
 
@@ -567,30 +566,18 @@ export function resolveTeamWorkerCliPlan(
 }
 
 export function translateWorkerLaunchArgsForCli(workerCli: TeamWorkerCli, args: string[], initialPrompt?: string): string[] {
-  // Delegate to the provider if registered
   const provider = resolveProviderForCli(workerCli);
-  if (provider) {
-    const isCodex = workerCli === 'codex';
-    // For codex: bypass only when explicitly requested (flag in args or process.argv).
-    // For all other providers: team workers always need bypass approvals.
-    const wantsBypass = isCodex
-      ? (args.includes(CODEX_BYPASS_FLAG) || process.argv.includes(CODEX_BYPASS_FLAG) || process.argv.includes(MADMAX_FLAG))
-      : true;
-    return provider.buildLaunchArgs({
-      bypassApprovals: wantsBypass,
-      // For codex, model is already embedded in extraArgs — don't pass separately to avoid duplication.
-      // For other providers, args are not passed through so model must be extracted explicitly.
-      model: isCodex ? undefined : (extractModelOverride(args) ?? undefined),
-      initialPrompt: initialPrompt?.trim() || undefined,
-      extraArgs: isCodex ? [...args] : [],
-    });
+  if (!provider) {
+    throw new Error(`Unknown CLI provider "${workerCli}". Is it registered in the provider registry?`);
   }
-
-  // Legacy fallback for codex (pass args through unchanged)
-  if (workerCli === 'codex') return [...args];
-
-  void args;
-  return [CLAUDE_SKIP_PERMISSIONS_FLAG];
+  const isCodex = workerCli === 'codex';
+  // Codex embeds model and extra args in extraArgs; other providers extract model separately.
+  return provider.buildLaunchArgs({
+    bypassApprovals: true,
+    model: isCodex ? undefined : (extractModelOverride(args) ?? undefined),
+    initialPrompt: initialPrompt?.trim() || undefined,
+    extraArgs: isCodex ? [...args] : [],
+  });
 }
 
 function commandExists(binary: string): boolean {
@@ -702,11 +689,7 @@ export function buildWorkerProcessLaunchSpec(
   const fullLaunchArgs = resolveWorkerLaunchArgs(launchArgs, cwd, effectiveEnv);
   const workerCli = workerCliOverride ?? resolveTeamWorkerCli(fullLaunchArgs, effectiveEnv);
   const cliLaunchArgs = translateWorkerLaunchArgsForCli(workerCli, fullLaunchArgs, initialPrompt);
-  const effectiveCliLaunchArgs = workerCli === 'codex' && !cliLaunchArgs.includes(CODEX_BYPASS_FLAG)
-    ? [...cliLaunchArgs, CODEX_BYPASS_FLAG]
-    : cliLaunchArgs;
 
-  // Use provider's binaryName if available, otherwise fall back to workerCli string
   const provider = resolveProviderForCli(workerCli);
   const binaryName = provider?.binaryName ?? workerCli;
   const resolvedCliPath = resolveAbsoluteBinaryPath(binaryName);
@@ -723,7 +706,7 @@ export function buildWorkerProcessLaunchSpec(
   return {
     workerCli,
     command: resolvedCliPath,
-    args: effectiveCliLaunchArgs,
+    args: cliLaunchArgs,
     env: workerEnv,
   };
 }
@@ -1073,8 +1056,9 @@ function detectTrustPromptViaProviders(captured: string, workerCli?: string): Cl
     const provider = resolveProviderForCli(workerCli);
     if (provider?.detectTrustPrompt(captured)) return provider;
   }
-  // Then check all registered providers
+  // Then check all other registered providers
   for (const name of globalRegistry.list()) {
+    if (workerCli && name === workerCli) continue; // already checked above
     const provider = globalRegistry.get(name);
     if (provider.detectTrustPrompt(captured)) return provider;
   }

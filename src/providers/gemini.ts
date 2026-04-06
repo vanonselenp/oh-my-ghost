@@ -15,7 +15,7 @@ import type {
   OmxConfig,
   TuiContract,
 } from './types.js';
-import { resolveCommandPathForPlatform, spawnPlatformCommandSync, classifySpawnError } from '../utils/platform-command.js';
+import { assertProviderBinaryAvailable, injectGuidanceToFile } from './shared.js';
 
 const GEMINI_APPROVAL_MODE_FLAG = '--approval-mode';
 const GEMINI_APPROVAL_MODE_YOLO = 'yolo';
@@ -136,44 +136,15 @@ export class GeminiProvider implements CliProvider {
   // -- 5. Prompt / guidance injection --------------------------------------
 
   async injectGuidance(guidance: string, projectRoot: string): Promise<void> {
-    const filePath = join(projectRoot, this.guidanceFile());
-    let existing = '';
-    if (existsSync(filePath)) {
-      existing = await readFile(filePath, 'utf-8');
-    }
-
-    const markerStart = '<!-- OMX:TEAM:WORKER:START -->';
-    const markerEnd = '<!-- OMX:TEAM:WORKER:END -->';
-
-    const startIdx = existing.indexOf(markerStart);
-    const endIdx = existing.indexOf(markerEnd);
-    let base = existing;
-    if (startIdx !== -1 && endIdx !== -1) {
-      base =
-        existing.slice(0, startIdx) +
-        existing.slice(endIdx + markerEnd.length);
-    }
-
-    const injected = `${base.trimEnd()}\n\n${markerStart}\n${guidance}\n${markerEnd}\n`;
-    await writeFile(filePath, injected, 'utf-8');
+    await injectGuidanceToFile(join(projectRoot, this.guidanceFile()), guidance);
   }
 
   // -- 6. Binary resolution ------------------------------------------------
 
   assertBinaryAvailable(): void {
-    const resolved = resolveCommandPathForPlatform(this.binaryName);
-    if (resolved) return;
-
-    const { result } = spawnPlatformCommandSync(this.binaryName, ['--version'], {
-      encoding: 'utf-8',
-    });
-    if (result.error) {
-      const kind = classifySpawnError(result.error as NodeJS.ErrnoException);
-      if (kind === 'missing') {
-        throw new Error(
-          `CLI binary "${this.binaryName}" not found on PATH. Install Gemini CLI: npm install -g @google/gemini-cli`,
-        );
-      }
-    }
+    assertProviderBinaryAvailable(
+      this.binaryName,
+      'Install Gemini CLI: npm install -g @google/gemini-cli',
+    );
   }
 }

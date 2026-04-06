@@ -179,8 +179,10 @@ export async function detectLegacySkillRootOverlap(
     legacyExists ? realpath(legacyDir).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const canonicalHashes = await hashSkillDirectory(canonicalSkills);
-  const legacyHashes = await hashSkillDirectory(legacySkills);
+  const [canonicalHashes, legacyHashes] = await Promise.all([
+    hashSkillDirectory(canonicalSkills),
+    hashSkillDirectory(legacySkills),
+  ]);
   const canonicalNames = new Set(canonicalSkills.map((skill) => skill.name));
   const legacyNames = new Set(legacySkills.map((skill) => skill.name));
   const overlappingSkillNames = [...canonicalNames]
