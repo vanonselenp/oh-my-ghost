@@ -24,7 +24,7 @@ It works with [Codex](https://github.com/openai/codex), [Claude Code](https://gi
 
 ## Recommended default flow
 
-If you want the default OMX experience with Codex, start here:
+**With Codex:**
 
 ```bash
 npm install -g @openai/codex oh-my-codex
@@ -32,7 +32,19 @@ omx setup
 omx --madmax --high
 ```
 
-Then work normally inside Codex:
+`--madmax` bypasses approval prompts and `--high` sets high reasoning effort — both are Codex-specific flags. See `omx --help` for the full list.
+
+**With Claude Code, OpenCode, or Gemini:**
+
+```bash
+npm install -g oh-my-codex
+omx setup
+claude   # or: opencode / gemini
+```
+
+`omx setup` installs skills and guidance files into each installed CLI's config directory (`~/.claude/`, `~/.opencode/`, etc.). Then launch your CLI directly — OMX's skills are available inside it.
+
+**The canonical workflow (works in any supported CLI):**
 
 ```text
 $deep-interview "clarify the authentication change"
@@ -41,8 +53,7 @@ $ralph "carry the approved plan to completion"
 $team 3:executor "execute the approved plan in parallel"
 ```
 
-That is the main path.
-Start OMX strongly, clarify first when needed, approve the plan, then choose `$team` for coordinated parallel execution or `$ralph` for the persistent completion loop.
+Clarify first when needed, approve the plan, then choose `$team` for coordinated parallel execution or `$ralph` for the persistent completion loop.
 
 ## What OMX is for
 
@@ -69,13 +80,7 @@ If you want plain CLI usage with no extra workflow layer, you probably do not ne
 
 ### A good first session
 
-Launch OMX the recommended way:
-
-```bash
-omx --madmax --high
-```
-
-Then try the canonical workflow:
+Start your CLI (Codex users can use `omx --madmax --high`; Claude Code / OpenCode / Gemini users launch their CLI directly after `omx setup`), then try the canonical workflow:
 
 ```text
 $deep-interview "clarify the authentication change"
@@ -97,20 +102,6 @@ It adds a better working layer around it:
 - **`.omx/`** stores plans, logs, memory, and runtime state
 
 Most users should think of OMX as **better task routing + better workflow + better runtime**, not as a command surface to operate manually all day.
-
-## Start here if you are new
-
-1. Run `omx setup`
-2. Launch with `omx --madmax --high`
-3. Use `$deep-interview "..."` when the request or boundaries are still unclear
-4. Use `$ralplan "..."` to approve the plan and review tradeoffs
-5. Choose `$team` for coordinated parallel execution or `$ralph` for persistent completion loops
-
-## Recommended workflow
-
-1. `$deep-interview` — clarify scope when the request or boundaries are still vague.
-2. `$ralplan` — turn that clarified scope into an approved architecture and implementation plan.
-3. `$team` or `$ralph` — use `$team` for coordinated parallel execution, or `$ralph` when you want a persistent completion loop with one owner.
 
 ## Common in-session surfaces
 
@@ -150,7 +141,7 @@ OMX_TEAM_WORKER_CLI_MAP=codex,claude,opencode omx team 3:executor "..."
 ### Setup, doctor, and HUD
 
 These are operator/support surfaces:
-- `omx setup` installs prompts, skills, config, and AGENTS scaffolding
+- `omx setup` installs skills, prompts, MCP config, and guidance scaffolding (`AGENTS.md` for Codex/OpenCode/Gemini, `CLAUDE.md` for Claude Code) into each detected CLI's config directory
 - `omx doctor` verifies the install when something seems wrong
 - `omx hud --watch` is a monitoring/status surface, not the primary user workflow
 
