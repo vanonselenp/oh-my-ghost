@@ -68,6 +68,7 @@ import {
   type TeamReasoningEffort,
 } from './model-contract.js';
 import { resolveCanonicalTeamStateRoot } from './state-root.js';
+import { globalRegistry } from '../providers/index.js';
 import {
   ensureWorktree,
   planWorktreeTarget,
@@ -249,7 +250,7 @@ export async function scaleUp(
 
     const rollbackScaleUp = async (
       error: string,
-      context: { paneId?: string; workerName?: string; worktreePath?: string } = {},
+      context: { paneId?: string; workerName?: string; worktreePath?: string; workerCli?: string } = {},
     ): Promise<ScaleError> => {
       for (const w of addedWorkers) {
         const idx = config.workers.findIndex((worker) => worker.name === w.name);
@@ -264,7 +265,8 @@ export async function scaleUp(
           }
         } catch {}
         if (w.worktree_path) {
-          await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, teamStateRoot, w.worktree_path).catch(() => {});
+          const wProvider = w.worker_cli && globalRegistry.has(w.worker_cli) ? globalRegistry.get(w.worker_cli) : undefined;
+          await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, teamStateRoot, w.worktree_path, wProvider).catch(() => {});
         }
       }
 
@@ -273,11 +275,13 @@ export async function scaleUp(
         context.worktreePath &&
         !addedWorkers.some((worker) => worker.name === context.workerName)
       ) {
+        const ctxProvider = context.workerCli && globalRegistry.has(context.workerCli) ? globalRegistry.get(context.workerCli) : undefined;
         await removeWorkerWorktreeRootAgentsFile(
           sanitized,
           context.workerName,
           teamStateRoot,
           context.worktreePath,
+          ctxProvider,
         ).catch(() => {});
       }
 
@@ -410,7 +414,7 @@ export async function scaleUp(
       if (result.status !== 0) {
         return await rollbackScaleUp(
           `Failed to create tmux pane for ${workerName}: ${(result.stderr || '').trim()}`,
-          { workerName, worktreePath: workerWorkspace?.worktreePath },
+          { workerName, worktreePath: workerWorkspace?.worktreePath, workerCli: workerCliPlan[i] },
         );
       }
 
@@ -420,6 +424,7 @@ export async function scaleUp(
           paneId,
           workerName,
           worktreePath: workerWorkspace?.worktreePath,
+          workerCli: workerCliPlan[i],
         });
       }
 
@@ -591,6 +596,7 @@ export async function scaleUp(
           paneId,
           workerName,
           worktreePath: workerWorkspace?.worktreePath,
+          workerCli: workerCliPlan[i],
         });
       }
 
@@ -771,7 +777,8 @@ export async function scaleDown(
 
     for (const w of targetWorkers) {
       if (w.worktree_path) {
-        await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, w.team_state_root ?? config.team_state_root ?? resolveCanonicalTeamStateRoot(leaderCwd), w.worktree_path).catch(() => {});
+        const wProvider = w.worker_cli && globalRegistry.has(w.worker_cli) ? globalRegistry.get(w.worker_cli) : undefined;
+        await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, w.team_state_root ?? config.team_state_root ?? resolveCanonicalTeamStateRoot(leaderCwd), w.worktree_path, wProvider).catch(() => {});
       }
       removedNames.push(w.name);
     }

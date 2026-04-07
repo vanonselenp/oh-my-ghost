@@ -150,12 +150,15 @@ export class CodexProvider implements CliProvider {
   // -- 4. CLI argument translation -----------------------------------------
 
   buildLaunchArgs(opts: LaunchOpts): string[] {
-    const args = [...opts.extraArgs];
+    // When rawArgs is provided the caller is forwarding the leader's full arg
+    // list verbatim (model flags already included); use it as the base and
+    // skip the model-appending logic to avoid duplication.
+    const args = [...(opts.rawArgs ?? opts.extraArgs)];
 
     if (opts.bypassApprovals && !args.includes(CODEX_BYPASS_FLAG)) {
       args.push(CODEX_BYPASS_FLAG);
     }
-    if (opts.model) {
+    if (!opts.rawArgs && opts.model) {
       args.push(MODEL_FLAG, opts.model);
     }
 

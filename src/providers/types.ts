@@ -62,6 +62,13 @@ export interface LaunchOpts {
   initialPrompt?: string;
   /** Extra CLI arguments forwarded from the user. */
   extraArgs: string[];
+  /**
+   * Raw args from the leader's launch command, forwarded verbatim.
+   * Providers that pass the original arg list through unchanged (e.g. Codex)
+   * use this instead of extraArgs so callers don't need to know which
+   * provider they're talking to.
+   */
+  rawArgs?: string[];
   /** Current working directory for the session. */
   cwd?: string;
   /** Environment overrides. */

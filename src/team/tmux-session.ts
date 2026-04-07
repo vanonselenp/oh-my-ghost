@@ -53,6 +53,11 @@ const OMX_TEAM_AUTO_INTERRUPT_RETRY_ENV = 'OMX_TEAM_AUTO_INTERRUPT_RETRY';
 const OMX_LEADER_NODE_PATH_ENV = 'OMX_LEADER_NODE_PATH';
 const OMX_LEADER_CLI_PATH_ENV = 'OMX_LEADER_CLI_PATH';
 
+/**
+ * Identifies the CLI tool used to launch a team worker.
+ * Expected values: "codex" | "claude" | "gemini" | "opencode", or any
+ * custom provider name registered with the global ProviderRegistry.
+ */
 export type TeamWorkerCli = string;
 type TeamWorkerCliMode = 'auto' | string;
 export type TeamWorkerLaunchMode = 'interactive' | 'prompt';
@@ -570,13 +575,12 @@ export function translateWorkerLaunchArgsForCli(workerCli: TeamWorkerCli, args: 
   if (!provider) {
     throw new Error(`Unknown CLI provider "${workerCli}". Is it registered in the provider registry?`);
   }
-  const isCodex = workerCli === 'codex';
-  // Codex embeds model and extra args in extraArgs; other providers extract model separately.
   return provider.buildLaunchArgs({
     bypassApprovals: true,
-    model: isCodex ? undefined : (extractModelOverride(args) ?? undefined),
+    model: extractModelOverride(args) ?? undefined,
     initialPrompt: initialPrompt?.trim() || undefined,
-    extraArgs: isCodex ? [...args] : [],
+    extraArgs: [],
+    rawArgs: args,
   });
 }
 
@@ -1056,11 +1060,18 @@ function detectTrustPromptViaProviders(captured: string, workerCli?: string): Cl
     const provider = resolveProviderForCli(workerCli);
     if (provider?.detectTrustPrompt(captured)) return provider;
   }
-  // Then check all other registered providers
+  // Fallback: scan all registered providers.
+  // This path should be rare — log a warning so it's visible in debugging.
   for (const name of globalRegistry.list()) {
     if (workerCli && name === workerCli) continue; // already checked above
     const provider = globalRegistry.get(name);
-    if (provider.detectTrustPrompt(captured)) return provider;
+    if (provider.detectTrustPrompt(captured)) {
+      process.stderr.write(
+        `[omx:tmux] detectTrustPromptViaProviders: matched provider "${name}" via fallback scan` +
+          (workerCli ? ` (expected "${workerCli}")` : '') + '\n',
+      );
+      return provider;
+    }
   }
   return null;
 }

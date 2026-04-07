@@ -1745,11 +1745,13 @@ export async function startTeam(
       for (const worker of config.workers) {
         if (!worker.worktree_path || !worker.team_state_root) continue;
         try {
+          const workerProvider = worker.worker_cli && globalRegistry.has(worker.worker_cli) ? globalRegistry.get(worker.worker_cli) : undefined;
           await removeWorkerWorktreeRootAgentsFile(
             sanitized,
             worker.name,
             worker.team_state_root,
             worker.worktree_path,
+            workerProvider,
           );
         } catch (cleanupError) {
           rollbackErrors.push(`removeWorkerWorktreeRootAgentsFile(${worker.name}): ${String(cleanupError)}`);
@@ -2373,11 +2375,13 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
   for (const worker of config.workers) {
     if (!worker.worktree_path || !worker.team_state_root) continue;
     try {
+      const workerProvider = worker.worker_cli && globalRegistry.has(worker.worker_cli) ? globalRegistry.get(worker.worker_cli) : undefined;
       await removeWorkerWorktreeRootAgentsFile(
         sanitized,
         worker.name,
         worker.team_state_root,
         worker.worktree_path,
+        workerProvider,
       );
     } catch (err) {
       process.stderr.write(`[team/runtime] operation failed: ${err}\n`);
