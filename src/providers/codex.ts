@@ -29,7 +29,11 @@ const SHARED_MCP_REGISTRY_MARKER = '# oh-my-codex (OMX) Shared MCP Registry Sync
 const SHARED_MCP_REGISTRY_END_MARKER = '# End oh-my-codex shared MCP registry sync';
 
 function escapeTomlString(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
 }
 
 export class CodexProvider implements CliProvider {

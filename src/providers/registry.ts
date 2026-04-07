@@ -46,7 +46,15 @@ export class ProviderRegistry {
   }
 }
 
-/** Global singleton registry used by the OMX runtime. */
+/**
+ * Global singleton registry used by the OMX runtime.
+ *
+ * Built-in providers are registered eagerly at module load time.
+ * External providers can be added via `registerProvider()` before the
+ * runtime starts, but the registry is not designed for hot-swapping
+ * providers at runtime — trust prompt detection and CLI map resolution
+ * assume a closed, stable set of provider names within a single process.
+ */
 export const globalRegistry = new ProviderRegistry();
 
 // Register built-in providers eagerly so they are available without
