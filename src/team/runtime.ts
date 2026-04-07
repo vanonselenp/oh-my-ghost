@@ -108,6 +108,7 @@ import {
 } from './model-contract.js';
 import { resolveCanonicalTeamStateRoot } from './state-root.js';
 import { inferPhaseTargetFromTaskCounts, reconcilePhaseStateForMonitor } from './phase-controller.js';
+import { globalRegistry } from '../providers/index.js';
 import { getTeamTmuxSessions } from '../notifications/tmux.js';
 import { hasStructuredVerificationEvidence } from '../verification/verifier.js';
 import { buildRebalanceDecisions } from './rebalance-policy.js';
@@ -1142,7 +1143,7 @@ function spawnPromptWorker(
   workerCwd: string,
   launchArgs: string[],
   workerEnv: Record<string, string>,
-  workerCli: 'codex' | 'claude' | 'opencode' | 'gemini',
+  workerCli: TeamWorkerCli,
   initialPrompt?: string,
 ): ChildProcessByStdio<Writable, null, null> {
   const processSpec = buildWorkerProcessLaunchSpec(
@@ -1214,7 +1215,7 @@ export function resolveWorkerLaunchArgsFromEnv(
 function resolveEffectiveWorkerCliForStartupLog(
   resolvedLaunchArgs: string[],
   env: NodeJS.ProcessEnv,
-): 'codex' | 'claude' | 'opencode' | 'gemini' {
+): TeamWorkerCli {
   const rawCliMap = String(env.OMX_TEAM_WORKER_CLI_MAP ?? '').trim();
   if (rawCliMap !== '') {
     const entries = rawCliMap
@@ -1226,9 +1227,9 @@ function resolveEffectiveWorkerCliForStartupLog(
         ...env,
         OMX_TEAM_WORKER_CLI: 'auto',
       });
-      const resolvedMap = entries.map((entry): 'codex' | 'claude' | 'opencode' | 'gemini' | null => {
+      const resolvedMap = entries.map((entry): TeamWorkerCli | null => {
         if (entry === 'auto') return autoCli;
-        if (entry === 'codex' || entry === 'claude' || entry === 'opencode' || entry === 'gemini') return entry;
+        if (globalRegistry.has(entry)) return entry as TeamWorkerCli;
         return null;
       });
       if (resolvedMap.every((entry) => entry === 'claude')) return 'claude';

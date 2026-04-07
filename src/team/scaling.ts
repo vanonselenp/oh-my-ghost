@@ -23,6 +23,7 @@ import {
   teardownWorkerPanes,
   buildWorkerStartupCommand,
   resolveTeamWorkerCliPlan,
+  type TeamWorkerCli,
 } from './tmux-session.js';
 import { execFileSync, spawnSync } from 'child_process';
 import {
@@ -169,7 +170,7 @@ async function notifyWorkerPaneOutcome(
   workerIndex: number,
   message: string,
   paneId?: string,
-  workerCli?: 'codex' | 'claude' | 'opencode' | 'gemini',
+  workerCli?: TeamWorkerCli,
 ): Promise<DispatchOutcome> {
   try {
     await sendToWorker(sessionName, workerIndex, message, paneId, workerCli);

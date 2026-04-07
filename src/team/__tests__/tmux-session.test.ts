@@ -1098,9 +1098,9 @@ describe('team worker CLI helpers', () => {
     assert.deepEqual(plan, ['codex', 'gemini', 'claude']);
   });
 
-  it('translateWorkerLaunchArgsForCli preserves args for codex', () => {
+  it('translateWorkerLaunchArgsForCli appends bypass flag for codex', () => {
     const args = ['--model', 'gpt-5', '-c', 'model_reasoning_effort="xhigh"'];
-    assert.deepEqual(translateWorkerLaunchArgsForCli('codex', args), args);
+    assert.deepEqual(translateWorkerLaunchArgsForCli('codex', args), [...args, '--dangerously-bypass-approvals-and-sandbox']);
   });
 
   it('translateWorkerLaunchArgsForCli returns only skip-permissions for claude', () => {

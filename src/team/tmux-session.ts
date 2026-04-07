@@ -572,9 +572,8 @@ export function translateWorkerLaunchArgsForCli(workerCli: TeamWorkerCli, args: 
   }
   const isCodex = workerCli === 'codex';
   // Codex embeds model and extra args in extraArgs; other providers extract model separately.
-  // Codex manages its own approval bypass via its args — don't inject the flag automatically.
   return provider.buildLaunchArgs({
-    bypassApprovals: !isCodex,
+    bypassApprovals: true,
     model: isCodex ? undefined : (extractModelOverride(args) ?? undefined),
     initialPrompt: initialPrompt?.trim() || undefined,
     extraArgs: isCodex ? [...args] : [],
@@ -690,14 +689,6 @@ export function buildWorkerProcessLaunchSpec(
   const fullLaunchArgs = resolveWorkerLaunchArgs(launchArgs, cwd, effectiveEnv);
   const workerCli = workerCliOverride ?? resolveTeamWorkerCli(fullLaunchArgs, effectiveEnv);
   const cliLaunchArgs = translateWorkerLaunchArgsForCli(workerCli, fullLaunchArgs, initialPrompt);
-
-  // Codex workers always need bypass approval in automated team operation.
-  // translateWorkerLaunchArgsForCli intentionally omits it (to preserve args
-  // unchanged at that layer), so we inject it here for the full launch spec.
-  const CODEX_BYPASS_FLAG = '--dangerously-bypass-approvals-and-sandbox';
-  if (workerCli === 'codex' && !cliLaunchArgs.includes(CODEX_BYPASS_FLAG)) {
-    cliLaunchArgs.push(CODEX_BYPASS_FLAG);
-  }
 
   const provider = resolveProviderForCli(workerCli);
   const binaryName = provider?.binaryName ?? workerCli;
@@ -1149,11 +1140,11 @@ function resolveWorkerCliFromMapForSend(
  */
 export function resolveWorkerCliForSend(
   workerIndex: number,
-  workerCli?: TeamWorkerCli,
+  workerCli?: string,
   launchArgs: string[] = [],
   env: NodeJS.ProcessEnv = process.env,
 ): TeamWorkerCli {
-  if (workerCli) return workerCli;
+  if (workerCli) return workerCli as TeamWorkerCli;
   const mapped = resolveWorkerCliFromMapForSend(workerIndex, launchArgs, env);
   if (mapped) return mapped;
   return resolveTeamWorkerCli(launchArgs, env);
@@ -1380,7 +1371,7 @@ export async function sendToWorker(
   workerIndex: number,
   text: string,
   workerPaneId?: string,
-  workerCli?: TeamWorkerCli,
+  workerCli?: string,
 ): Promise<void> {
   assertWorkerTriggerText(text);
 

@@ -134,10 +134,10 @@ describe('tmux claude workers demo', () => {
   });
 
   describe('translateWorkerLaunchArgsForCli', () => {
-    it('returns codex args unchanged', () => {
+    it('appends bypass flag for codex', () => {
       const args = ['--model', 'gpt-5.3-codex', '--json'];
       const result = translateWorkerLaunchArgsForCli('codex', args);
-      assert.deepEqual(result, args);
+      assert.deepEqual(result, [...args, '--dangerously-bypass-approvals-and-sandbox']);
     });
 
     it('returns only skip-permissions for claude', () => {

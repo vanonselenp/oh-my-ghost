@@ -5,7 +5,6 @@
  */
 
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { resolveCommandPathForPlatform } from '../utils/platform-command.js';
 
 const OMX_GUIDANCE_MARKER_START = '<!-- OMX:TEAM:WORKER:START -->';
@@ -55,9 +54,3 @@ export function assertProviderBinaryAvailable(
   }
 }
 
-/**
- * Build the path to the guidance file in a project root.
- */
-export function guidanceFilePath(projectRoot: string, guidanceFile: string): string {
-  return join(projectRoot, guidanceFile);
-}
