@@ -22,6 +22,7 @@ import { sleep, sleepSync } from '../utils/sleep.js';
 import { classifySpawnError, resolveCommandPathForPlatform, spawnPlatformCommandSync } from '../utils/platform-command.js';
 import { globalRegistry } from '../providers/registry.js';
 import type { CliProvider } from '../providers/types.js';
+import type { TmuxKey } from '../providers/types.js';
 
 const execFileAsync = promisify(execFile);
 import { HUD_RESIZE_RECONCILE_DELAY_SECONDS, HUD_TMUX_TEAM_HEIGHT_LINES } from '../hud/constants.js';
@@ -52,8 +53,8 @@ const OMX_TEAM_AUTO_INTERRUPT_RETRY_ENV = 'OMX_TEAM_AUTO_INTERRUPT_RETRY';
 const OMX_LEADER_NODE_PATH_ENV = 'OMX_LEADER_NODE_PATH';
 const OMX_LEADER_CLI_PATH_ENV = 'OMX_LEADER_CLI_PATH';
 
-export type TeamWorkerCli = 'codex' | 'claude' | 'opencode' | 'gemini';
-type TeamWorkerCliMode = 'auto' | TeamWorkerCli;
+export type TeamWorkerCli = string;
+type TeamWorkerCliMode = 'auto' | string;
 export type TeamWorkerLaunchMode = 'interactive' | 'prompt';
 
 /**
@@ -466,8 +467,7 @@ function hasModelInstructionsOverride(args: string[]): boolean {
 function normalizeTeamWorkerCliMode(raw: string | undefined, sourceEnv: string = OMX_TEAM_WORKER_CLI_ENV): TeamWorkerCliMode {
   const normalized = String(raw ?? 'auto').trim().toLowerCase();
   if (normalized === '' || normalized === 'auto') return 'auto';
-  // Accept any registered provider name, plus legacy hardcoded names
-  if (normalized === 'codex' || normalized === 'claude' || normalized === 'gemini' || globalRegistry.has(normalized)) {
+  if (globalRegistry.has(normalized)) {
     return normalized as TeamWorkerCliMode;
   }
   const available = globalRegistry.list();
@@ -1072,12 +1072,11 @@ function detectTrustPromptViaProviders(captured: string, workerCli?: string): Cl
 function dismissDetectedTrustPrompt(target: string, provider: CliProvider): boolean {
   const keys = provider.dismissTrustPromptKeys();
   for (let i = 0; i < keys.length; i++) {
-    if (keys[i].length === 1) {
-      // Single character: send as literal
-      runTmux(['send-keys', '-t', target, '-l', '--', keys[i]]);
+    const key = keys[i] as TmuxKey;
+    if (key.type === 'literal') {
+      runTmux(['send-keys', '-t', target, '-l', '--', key.char]);
     } else {
-      // Key name (e.g. "C-m"): send as key
-      runTmux(['send-keys', '-t', target, keys[i]]);
+      runTmux(['send-keys', '-t', target, key.name]);
     }
     if (i < keys.length - 1) sleepFractionalSeconds(0.12);
   }

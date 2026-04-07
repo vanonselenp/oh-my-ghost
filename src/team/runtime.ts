@@ -1232,10 +1232,15 @@ function resolveEffectiveWorkerCliForStartupLog(
         if (globalRegistry.has(entry)) return entry as TeamWorkerCli;
         return null;
       });
-      if (resolvedMap.every((entry) => entry === 'claude')) return 'claude';
-      if (resolvedMap.every((entry) => entry === 'gemini')) return 'gemini';
-      if (resolvedMap.every((entry) => entry === 'opencode')) return 'opencode';
-      if (resolvedMap.some((entry) => entry === 'codex')) return 'codex';
+      const nonNull = resolvedMap.filter((e): e is TeamWorkerCli => e !== null);
+      if (nonNull.length > 0) {
+        const first = nonNull[0]!;
+        if (nonNull.every((e) => e === first)) return first;
+        // Mixed providers: return the most common one
+        const counts = new Map<TeamWorkerCli, number>();
+        for (const e of nonNull) counts.set(e, (counts.get(e) ?? 0) + 1);
+        return [...counts.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+      }
     }
   }
 
@@ -1379,7 +1384,9 @@ export async function startTeam(
 
     // 5. Write team-scoped worker instructions file only for single-workspace mode.
     if (workspaceMode !== 'worktree') {
-      workerInstructionsPath = await writeTeamWorkerInstructionsFile(sanitized, leaderCwd, overlay);
+      const dominantCli = workerCliPlan.length > 0 && workerCliPlan.every(c => c === workerCliPlan[0]) ? workerCliPlan[0] : undefined;
+      const dominantProvider = dominantCli && globalRegistry.has(dominantCli) ? globalRegistry.get(dominantCli) : undefined;
+      workerInstructionsPath = await writeTeamWorkerInstructionsFile(sanitized, leaderCwd, overlay, dominantProvider);
       setTeamModelInstructionsFile(sanitized, workerInstructionsPath);
     }
 
@@ -1430,6 +1437,8 @@ export async function startTeam(
         : null;
       const workerWorktreePath = workerWorkspace.worktreePath ?? undefined;
       const fallbackInstructionsPath = workerInstructionsPath ?? join(leaderCwd, 'AGENTS.md');
+      const workerProviderName = workerCliPlan[i - 1];
+      const workerProvider = workerProviderName && globalRegistry.has(workerProviderName) ? globalRegistry.get(workerProviderName) : undefined;
       const instructionsFilePath = workerWorktreePath
         ? await writeWorkerWorktreeRootAgentsFile({
           teamName: sanitized,
@@ -1439,9 +1448,10 @@ export async function startTeam(
           teamStateRoot,
           leaderCwd,
           worktreePath: workerWorktreePath,
+          provider: workerProvider,
         })
         : rolePromptContent
-          ? await writeWorkerRoleInstructionsFile(sanitized, workerName, leaderCwd, fallbackInstructionsPath, workerRole, rolePromptContent)
+          ? await writeWorkerRoleInstructionsFile(sanitized, workerName, leaderCwd, fallbackInstructionsPath, workerRole, rolePromptContent, workerProvider)
           : fallbackInstructionsPath;
       const inbox = generateInitialInbox(workerName, sanitized, agentType, workerTasks, {
         teamStateRoot,

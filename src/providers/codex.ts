@@ -15,6 +15,7 @@ import type {
   CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
+  TmuxKey,
   TuiContract,
 } from './types.js';
 import { assertProviderBinaryAvailable, injectGuidanceToFile } from './shared.js';
@@ -126,9 +127,9 @@ export class CodexProvider implements CliProvider {
     return hasQuestion && hasActiveChoices;
   }
 
-  dismissTrustPromptKeys(): string[] {
+  dismissTrustPromptKeys(): TmuxKey[] {
     // Codex trust prompt: press Enter twice (trust + follow-up splash).
-    return ['C-m', 'C-m'];
+    return [{ type: 'key', name: 'C-m' }, { type: 'key', name: 'C-m' }];
   }
 
   detectViewport(paneContent: string): boolean {

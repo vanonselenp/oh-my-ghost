@@ -13,6 +13,7 @@ import type {
   CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
+  TmuxKey,
   TuiContract,
 } from './types.js';
 import { assertProviderBinaryAvailable, injectGuidanceToFile } from './shared.js';
@@ -134,9 +135,9 @@ export class ClaudeProvider implements CliProvider {
     return hasWarning && hasChoices;
   }
 
-  dismissTrustPromptKeys(): string[] {
+  dismissTrustPromptKeys(): TmuxKey[] {
     // Claude bypass prompt: press "2" then Enter to accept.
-    return ['2', 'C-m'];
+    return [{ type: 'literal', char: '2' }, { type: 'key', name: 'C-m' }];
   }
 
   detectViewport(_paneContent: string): boolean {

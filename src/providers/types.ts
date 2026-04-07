@@ -69,6 +69,19 @@ export interface LaunchOpts {
 }
 
 // ---------------------------------------------------------------------------
+// TUI key dispatch
+// ---------------------------------------------------------------------------
+
+/**
+ * A key to send via tmux send-keys when dismissing a trust prompt.
+ * Use `{ type: 'literal' }` for single printable characters (sent with -l).
+ * Use `{ type: 'key' }` for tmux key names (e.g. "C-m", "Tab", "Space").
+ */
+export type TmuxKey =
+  | { type: 'literal'; char: string }
+  | { type: 'key'; name: string };
+
+// ---------------------------------------------------------------------------
 // TUI contract
 // ---------------------------------------------------------------------------
 
@@ -178,9 +191,9 @@ export interface CliProvider {
 
   /**
    * Return the tmux key sequence to dismiss a trust prompt.
-   * E.g. ["2", "C-m"] for Claude's bypass-permissions accept.
+   * E.g. [{ type: 'literal', char: '2' }, { type: 'key', name: 'C-m' }] for Claude.
    */
-  dismissTrustPromptKeys(): string[];
+  dismissTrustPromptKeys(): TmuxKey[];
 
   /**
    * Detect whether tmux pane content shows the CLI's viewport frame.

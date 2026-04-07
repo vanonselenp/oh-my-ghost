@@ -13,6 +13,7 @@ import type {
   CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
+  TmuxKey,
   TuiContract,
 } from './types.js';
 import { assertProviderBinaryAvailable, injectGuidanceToFile } from './shared.js';
@@ -98,6 +99,14 @@ export class GeminiProvider implements CliProvider {
       existing.model = config.model;
     }
 
+    if (config.mcpServers && config.mcpServers.length > 0) {
+      // Gemini CLI does not support MCP server configuration via settings.json.
+      // MCP servers must be configured separately; they are ignored here.
+      console.warn(
+        '[omx:gemini] writeConfig: mcpServers are not supported by the Gemini CLI config format and were not written.',
+      );
+    }
+
     await writeFile(configPath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
   }
 
@@ -108,7 +117,7 @@ export class GeminiProvider implements CliProvider {
     return false;
   }
 
-  dismissTrustPromptKeys(): string[] {
+  dismissTrustPromptKeys(): TmuxKey[] {
     return [];
   }
 

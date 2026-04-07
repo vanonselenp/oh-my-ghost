@@ -69,6 +69,7 @@ globalRegistry.register('gemini', new GeminiProvider());
  * No-op — providers are registered eagerly above.
  * Kept for backward compatibility with callers that await this.
  */
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function initBuiltinProviders(): Promise<void> {
   // Built-in providers are already registered at module load time.
 }

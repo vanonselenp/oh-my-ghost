@@ -15,6 +15,7 @@ import type {
   CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
+  TmuxKey,
   TuiContract,
 } from './types.js';
 import { assertProviderBinaryAvailable, injectGuidanceToFile } from './shared.js';
@@ -123,7 +124,7 @@ export class OpenCodeProvider implements CliProvider {
     return false;
   }
 
-  dismissTrustPromptKeys(): string[] {
+  dismissTrustPromptKeys(): TmuxKey[] {
     return [];
   }
 

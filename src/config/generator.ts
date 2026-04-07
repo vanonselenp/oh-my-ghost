@@ -959,7 +959,7 @@ export function buildOmxConfig(pkgRoot: string, options: { modelOverride?: strin
     mcpServers,
     reasoningEffort: "high",
     developerInstructions:
-      "You have oh-my-codex installed. Your guidance file (AGENTS.md or CLAUDE.md depending on your CLI) is your " +
+      "You have oh-my-codex installed. Your guidance file is your " +
       "orchestration brain and the main orchestration surface. " +
       "Use skill/keyword routing like $name plus spawned role-specialized subagents for specialized work. " +
       "Skills are loaded from installed SKILL.md files in your CLI's skills directory. " +
