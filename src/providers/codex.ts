@@ -34,7 +34,9 @@ function escapeTomlString(value: string): string {
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r');
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 }
 
 export class CodexProvider implements CliProvider {

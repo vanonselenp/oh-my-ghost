@@ -1436,9 +1436,9 @@ export async function startTeam(
         ? composeRoleInstructionsForRole(workerRole, rawRolePromptContent, resolvedWorkerModel)
         : null;
       const workerWorktreePath = workerWorkspace.worktreePath ?? undefined;
-      const fallbackInstructionsPath = workerInstructionsPath ?? join(leaderCwd, 'AGENTS.md');
       const workerProviderName = workerCliPlan[i - 1];
       const workerProvider = workerProviderName && globalRegistry.has(workerProviderName) ? globalRegistry.get(workerProviderName) : undefined;
+      const fallbackInstructionsPath = workerInstructionsPath ?? join(leaderCwd, workerProvider?.guidanceFile() ?? 'AGENTS.md');
       const instructionsFilePath = workerWorktreePath
         ? await writeWorkerWorktreeRootAgentsFile({
           teamName: sanitized,
