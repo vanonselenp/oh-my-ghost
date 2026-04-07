@@ -2,12 +2,13 @@ import type { TeamTask } from "./state.js";
 import { existsSync } from "fs";
 import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
 import { dirname, join } from "path";
+import { homedir } from "os";
 import { execFileSync } from "child_process";
 import {
   getFixLoopInstructions,
   getVerificationInstructions,
 } from "../verification/verifier.js";
-import { codexHome, cliConfigHome, listInstalledSkillDirectories } from "../utils/paths.js";
+import { cliConfigHome, listInstalledSkillDirectories } from "../utils/paths.js";
 import { sleep } from "../utils/sleep.js";
 import type { CliProvider } from "../providers/types.js";
 
@@ -37,9 +38,9 @@ function guidanceFileName(provider?: CliProvider): string {
   return provider?.guidanceFile() ?? "AGENTS.md";
 }
 
-/** Get the CLI config home for the given provider, defaulting to codexHome(). */
+/** Get the CLI config home for the given provider, defaulting to the Codex home path. */
 function workerConfigHome(provider?: CliProvider): string {
-  return provider ? cliConfigHome(provider) : codexHome();
+  return provider ? cliConfigHome(provider) : (process.env.CODEX_HOME || join(homedir(), '.codex'));
 }
 
 interface WorkerRootAgentsBackup {
