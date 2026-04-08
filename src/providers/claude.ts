@@ -4,13 +4,11 @@
  * Implements CliProvider for Claude Code (the `claude` binary).
  */
 
-import { existsSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type {
   CliProvider,
-  CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
   TmuxKey,
@@ -23,13 +21,6 @@ const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 export class ClaudeProvider implements CliProvider {
   readonly name = 'claude';
   readonly binaryName = 'claude';
-
-  readonly capabilities: CliProviderCapabilities = {
-    tui: 'full',
-    queueMode: false,
-    adaptiveRetry: false,
-    viewportDetection: false,
-  };
 
   readonly tui: TuiContract = {
     mode: 'full',
@@ -83,12 +74,14 @@ export class ClaudeProvider implements CliProvider {
     await mkdir(dirname(configPath), { recursive: true });
 
     let existing: Record<string, unknown> = {};
-    if (existsSync(configPath)) {
-      try {
-        const raw = await readFile(configPath, 'utf-8');
-        existing = JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        // If the file is malformed, start fresh.
+    try {
+      const raw = await readFile(configPath, 'utf-8');
+      existing = JSON.parse(raw) as Record<string, unknown>;
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        // File doesn't exist yet; start fresh.
+      } else {
+        console.warn(`[omx] Warning: could not parse ${configPath}, resetting to defaults.`);
       }
     }
 
@@ -148,11 +141,12 @@ export class ClaudeProvider implements CliProvider {
   // -- 4. CLI argument translation -----------------------------------------
 
   buildLaunchArgs(opts: LaunchOpts): string[] {
-    // Claude workers launch with only the permissions bypass flag.
-    // All other Codex-specific flags are dropped.
     const args: string[] = [];
     if (opts.bypassApprovals) {
       args.push(CLAUDE_SKIP_PERMISSIONS_FLAG);
+    }
+    if (opts.model) {
+      args.push('--model', opts.model);
     }
     return args;
   }

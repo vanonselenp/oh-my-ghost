@@ -16,6 +16,7 @@ import { join } from "path";
 import { AGENT_DEFINITIONS } from "../agents/definitions.js";
 import { DEFAULT_FRONTIER_MODEL } from "./models.js";
 import type { UnifiedMcpRegistryServer } from "./mcp-registry.js";
+import { escapeTomlString } from "../utils/toml.js";
 
 interface MergeOptions {
   includeTui?: boolean;
@@ -23,10 +24,6 @@ interface MergeOptions {
   sharedMcpServers?: UnifiedMcpRegistryServer[];
   sharedMcpRegistrySource?: string;
   verbose?: boolean;
-}
-
-function escapeTomlString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 // ---------------------------------------------------------------------------

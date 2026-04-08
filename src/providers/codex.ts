@@ -12,13 +12,13 @@ import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type {
   CliProvider,
-  CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
   TmuxKey,
   TuiContract,
 } from './types.js';
 import { assertProviderBinaryAvailable, injectGuidanceToFile } from './shared.js';
+import { escapeTomlString } from '../utils/toml.js';
 
 const CODEX_BYPASS_FLAG = '--dangerously-bypass-approvals-and-sandbox';
 const MODEL_FLAG = '--model';
@@ -29,26 +29,9 @@ const OMX_MARKER_END = '# --- oh-my-codex (OMX) managed end ---';
 const SHARED_MCP_REGISTRY_MARKER = '# oh-my-codex (OMX) Shared MCP Registry Sync';
 const SHARED_MCP_REGISTRY_END_MARKER = '# End oh-my-codex shared MCP registry sync';
 
-function escapeTomlString(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
-}
-
 export class CodexProvider implements CliProvider {
   readonly name = 'codex';
   readonly binaryName = 'codex';
-
-  readonly capabilities: CliProviderCapabilities = {
-    tui: 'full',
-    queueMode: true,
-    adaptiveRetry: true,
-    viewportDetection: true,
-  };
 
   readonly tui: TuiContract = {
     mode: 'full',

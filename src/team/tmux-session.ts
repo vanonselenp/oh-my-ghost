@@ -20,6 +20,7 @@ import {
 } from '../scripts/tmux-hook-engine.js';
 import { sleep, sleepSync } from '../utils/sleep.js';
 import { classifySpawnError, resolveCommandPathForPlatform, spawnPlatformCommandSync } from '../utils/platform-command.js';
+import { escapeTomlString } from '../utils/toml.js';
 import { globalRegistry } from '../providers/registry.js';
 import type { CliProvider } from '../providers/types.js';
 import type { TmuxKey } from '../providers/types.js';
@@ -58,7 +59,7 @@ const OMX_LEADER_CLI_PATH_ENV = 'OMX_LEADER_CLI_PATH';
  * Expected values: "codex" | "claude" | "gemini" | "opencode", or any
  * custom provider name registered with the global ProviderRegistry.
  */
-export type TeamWorkerCli = string;
+export type TeamWorkerCli = 'codex' | 'claude' | 'gemini' | 'opencode' | (string & {});
 type TeamWorkerCliMode = 'auto' | string;
 export type TeamWorkerLaunchMode = 'interactive' | 'prompt';
 
@@ -443,10 +444,6 @@ function buildWorkerLaunchSpec(shellPath: string | undefined): WorkerLaunchSpec 
   return buildShellLaunchSpec('/bin/sh', null);
 }
 
-function escapeTomlString(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
 function isModelInstructionsOverride(value: string): boolean {
   return new RegExp(`^${MODEL_INSTRUCTIONS_FILE_KEY}\\s*=`).test(value.trim());
 }
@@ -517,9 +514,18 @@ export function resolveTeamWorkerCli(launchArgs: string[] = [], env: NodeJS.Proc
 
 function resolveTeamWorkerCliFromLaunchArgs(launchArgs: string[] = []): TeamWorkerCli {
   const model = extractModelOverride(launchArgs);
-  if (model && /claude/i.test(model)) return 'claude';
-  if (model && /gemini/i.test(model)) return 'gemini';
-  return 'codex';
+  if (model && /^claude/i.test(model)) return 'claude';
+  if (model && /^gemini/i.test(model)) return 'gemini';
+
+  // Prefer codex if available, otherwise fall back to the first registered
+  // provider whose binary is on PATH.
+  if (commandExists('codex')) return 'codex';
+  for (const name of globalRegistry.list()) {
+    if (name === 'codex') continue;
+    const provider = resolveProviderForCli(name);
+    if (provider && commandExists(provider.binaryName)) return name;
+  }
+  return 'codex'; // ultimate fallback — will fail with a clear error at binary check
 }
 
 export function resolveTeamWorkerCliPlan(
@@ -638,15 +644,32 @@ function buildModelInstructionsOverride(cwd: string, env: NodeJS.ProcessEnv): st
   return `${MODEL_INSTRUCTIONS_FILE_KEY}="${escapeTomlString(filePath)}"`;
 }
 
-function resolveWorkerLaunchArgs(extraArgs: string[] = [], cwd: string = process.cwd(), env: NodeJS.ProcessEnv = process.env): string[] {
+/**
+ * Build raw launch args for a worker.
+ *
+ * Codex-specific flags (-c model_instructions_file, --dangerously-bypass-...)
+ * are only injected when workerCli is 'codex'.  Other providers handle
+ * bypass/model via their own buildLaunchArgs().
+ */
+function resolveWorkerLaunchArgs(
+  extraArgs: string[] = [],
+  cwd: string = process.cwd(),
+  env: NodeJS.ProcessEnv = process.env,
+  workerCli: TeamWorkerCli = 'codex',
+): string[] {
   const merged = [...extraArgs];
-  const wantsBypass = process.argv.includes(CODEX_BYPASS_FLAG) || process.argv.includes(MADMAX_FLAG);
-  if (wantsBypass && !merged.includes(CODEX_BYPASS_FLAG)) {
-    merged.push(CODEX_BYPASS_FLAG);
+
+  // Codex-specific raw arg injection — other providers translate via buildLaunchArgs().
+  if (workerCli === 'codex') {
+    const wantsBypass = process.argv.includes(CODEX_BYPASS_FLAG) || process.argv.includes(MADMAX_FLAG);
+    if (wantsBypass && !merged.includes(CODEX_BYPASS_FLAG)) {
+      merged.push(CODEX_BYPASS_FLAG);
+    }
+    if (shouldBypassDefaultSystemPrompt(env) && !hasModelInstructionsOverride(merged)) {
+      merged.push(CONFIG_FLAG, buildModelInstructionsOverride(cwd, env));
+    }
   }
-  if (shouldBypassDefaultSystemPrompt(env) && !hasModelInstructionsOverride(merged)) {
-    merged.push(CONFIG_FLAG, buildModelInstructionsOverride(cwd, env));
-  }
+
   return merged;
 }
 
@@ -690,8 +713,9 @@ export function buildWorkerProcessLaunchSpec(
   initialPrompt?: string,
 ): WorkerProcessLaunchSpec {
   const effectiveEnv: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
-  const fullLaunchArgs = resolveWorkerLaunchArgs(launchArgs, cwd, effectiveEnv);
-  const workerCli = workerCliOverride ?? resolveTeamWorkerCli(fullLaunchArgs, effectiveEnv);
+  // Resolve the target CLI first so provider-specific raw args can be gated.
+  const workerCli = workerCliOverride ?? resolveTeamWorkerCli(launchArgs, effectiveEnv);
+  const fullLaunchArgs = resolveWorkerLaunchArgs(launchArgs, cwd, effectiveEnv, workerCli);
   const cliLaunchArgs = translateWorkerLaunchArgsForCli(workerCli, fullLaunchArgs, initialPrompt);
 
   const provider = resolveProviderForCli(workerCli);

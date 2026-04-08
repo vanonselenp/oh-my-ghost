@@ -108,22 +108,6 @@ export interface TuiContract {
 }
 
 // ---------------------------------------------------------------------------
-// Provider capabilities
-// ---------------------------------------------------------------------------
-
-/** Declares what optional features a provider supports. */
-export interface CliProviderCapabilities {
-  /** TUI interaction mode. 'full' enables viewport/prompt detection. */
-  tui: 'full' | 'headless';
-  /** Whether the CLI supports queue-ahead (Tab+Enter) input. */
-  queueMode: boolean;
-  /** Whether OMX may use adaptive retry for submit confirmation. */
-  adaptiveRetry: boolean;
-  /** Whether viewport detection is available. */
-  viewportDetection: boolean;
-}
-
-// ---------------------------------------------------------------------------
 // CliProvider interface
 // ---------------------------------------------------------------------------
 
@@ -144,9 +128,6 @@ export interface CliProvider {
 
   /** Binary name to look up in PATH (e.g. "codex", "claude", "opencode"). */
   readonly binaryName: string;
-
-  /** Declared capabilities for this provider. */
-  readonly capabilities: CliProviderCapabilities;
 
   /** TUI interaction contract for tmux-based orchestration. */
   readonly tui: TuiContract;

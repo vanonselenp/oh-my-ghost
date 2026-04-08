@@ -536,8 +536,9 @@ describe('buildWorkerStartupCommand', () => {
       const cmd = buildWorkerStartupCommand('alpha', 1, ['--model', 'claude-3-7-sonnet']);
       assert.match(cmd, /exec .*claude/);
       assert.equal((cmd.match(/--dangerously-skip-permissions/g) || []).length, 1);
-      assert.doesNotMatch(cmd, /--model/);
+      assert.match(cmd, /--model/);
       assert.doesNotMatch(cmd, /model_instructions_file=/);
+      assert.doesNotMatch(cmd, /dangerously-bypass-approvals-and-sandbox/);
     } finally {
       if (typeof prevShell === 'string') process.env.SHELL = prevShell;
       else delete process.env.SHELL;
@@ -563,7 +564,7 @@ describe('buildWorkerStartupCommand', () => {
       const claudeCmd = buildWorkerStartupCommand('alpha', 1, ['--model', 'gpt-5']);
       assert.match(claudeCmd, /exec .*claude/);
       assert.equal((claudeCmd.match(/--dangerously-skip-permissions/g) || []).length, 1);
-      assert.doesNotMatch(claudeCmd, /--model/);
+      assert.match(claudeCmd, /--model/);
     } finally {
       if (typeof prevShell === 'string') process.env.SHELL = prevShell;
       else delete process.env.SHELL;
@@ -591,7 +592,7 @@ describe('buildWorkerStartupCommand', () => {
       assert.match(cmd, /exec .*claude/);
       assert.equal((cmd.match(/--dangerously-skip-permissions/g) || []).length, 1);
       assert.doesNotMatch(cmd, /dangerously-bypass-approvals-and-sandbox/);
-      assert.doesNotMatch(cmd, /--model/);
+      assert.match(cmd, /--model/);
     } finally {
       if (typeof prevShell === 'string') process.env.SHELL = prevShell;
       else delete process.env.SHELL;
@@ -600,7 +601,7 @@ describe('buildWorkerStartupCommand', () => {
     }
   });
 
-  it('drops all explicit launch args for claude workers', () => {
+  it('drops codex-specific launch args for claude workers but keeps model', () => {
     const prevShell = process.env.SHELL;
     const prevCli = process.env.OMX_TEAM_WORKER_CLI;
     const prevBypass = process.env.OMX_BYPASS_DEFAULT_SYSTEM_PROMPT;
@@ -617,8 +618,8 @@ describe('buildWorkerStartupCommand', () => {
       assert.equal((cmd.match(/--dangerously-skip-permissions/g) || []).length, 1);
       assert.doesNotMatch(cmd, /dangerously-bypass-approvals-and-sandbox/);
       assert.doesNotMatch(cmd, /model_instructions_file=/);
-      assert.doesNotMatch(cmd, /--model/);
-      assert.doesNotMatch(cmd, /claude-3-7-sonnet/);
+      assert.match(cmd, /--model/);
+      assert.match(cmd, /claude-3-7-sonnet/);
     } finally {
       if (typeof prevShell === 'string') process.env.SHELL = prevShell;
       else delete process.env.SHELL;
@@ -1103,10 +1104,10 @@ describe('team worker CLI helpers', () => {
     assert.deepEqual(translateWorkerLaunchArgsForCli('codex', args), [...args, '--dangerously-bypass-approvals-and-sandbox']);
   });
 
-  it('translateWorkerLaunchArgsForCli returns only skip-permissions for claude', () => {
+  it('translateWorkerLaunchArgsForCli returns skip-permissions and model for claude', () => {
     assert.deepEqual(
       translateWorkerLaunchArgsForCli('claude', ['-c', 'model_reasoning_effort="xhigh"', '--model', 'claude-3-7-sonnet']),
-      ['--dangerously-skip-permissions'],
+      ['--dangerously-skip-permissions', '--model', 'claude-3-7-sonnet'],
     );
   });
 

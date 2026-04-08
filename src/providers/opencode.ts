@@ -6,13 +6,11 @@
  * once opencode's terminal behaviour is fully characterised.
  */
 
-import { existsSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type {
   CliProvider,
-  CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
   TmuxKey,
@@ -25,13 +23,6 @@ const MODEL_FLAG = '--model';
 export class OpenCodeProvider implements CliProvider {
   readonly name = 'opencode';
   readonly binaryName = 'opencode';
-
-  readonly capabilities: CliProviderCapabilities = {
-    tui: 'headless',
-    queueMode: false,
-    adaptiveRetry: false,
-    viewportDetection: false,
-  };
 
   readonly tui: TuiContract = {
     mode: 'headless',
@@ -86,12 +77,14 @@ export class OpenCodeProvider implements CliProvider {
     await mkdir(dirname(configPath), { recursive: true });
 
     let existing: Record<string, unknown> = {};
-    if (existsSync(configPath)) {
-      try {
-        const raw = await readFile(configPath, 'utf-8');
-        existing = JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        // If the file is malformed, start fresh.
+    try {
+      const raw = await readFile(configPath, 'utf-8');
+      existing = JSON.parse(raw) as Record<string, unknown>;
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        // File doesn't exist yet; start fresh.
+      } else {
+        console.warn(`[omx] Warning: could not parse ${configPath}, resetting to defaults.`);
       }
     }
 

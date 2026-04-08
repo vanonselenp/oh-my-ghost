@@ -4,7 +4,6 @@
 
 export type {
   CliProvider,
-  CliProviderCapabilities,
   LaunchOpts,
   OmxConfig,
   OmxMcpServer,
