@@ -1258,6 +1258,7 @@ export function waitForWorkerReady(
   workerIndex: number,
   timeoutMs: number = 30_000,
   workerPaneId?: string,
+  workerCli?: string,
 ): boolean {
   const initialBackoffMs = 150;
   const maxBackoffMs = 8000;
@@ -1265,14 +1266,7 @@ export function waitForWorkerReady(
   let blockedByTrustPrompt = false;
   let promptDismissed = false;
 
-  const sendRobustEnter = (): void => {
-    const target = paneTarget(sessionName, workerIndex, workerPaneId);
-    // Trust + follow-up splash can require two submits in Codex TUI.
-    // Use C-m (carriage return) for raw-mode compatibility.
-    runTmux(['send-keys', '-t', target, 'C-m']);
-    sleepFractionalSeconds(0.12);
-    runTmux(['send-keys', '-t', target, 'C-m']);
-  };
+  const workerProvider = workerCli ? resolveProviderForCli(workerCli) : undefined;
 
   const check = (): boolean => {
     const target = paneTarget(sessionName, workerIndex, workerPaneId);
@@ -1285,11 +1279,12 @@ export function waitForWorkerReady(
     if (paneHasClaudeBypassPermissionsPrompt(result.stdout)) {
       return false;
     }
-    if (paneHasTrustPrompt(result.stdout)) {
+    const matchedProvider = detectTrustPromptViaProviders(result.stdout, workerCli);
+    if (matchedProvider) {
       // Default-on for team workers: they are spawned explicitly by the leader in the same cwd.
       // Opt-out by setting OMX_TEAM_AUTO_TRUST=0.
       if (process.env.OMX_TEAM_AUTO_TRUST !== '0') {
-        sendRobustEnter();
+        dismissDetectedTrustPrompt(target, matchedProvider);
         promptDismissed = true;
         return false;
       }
@@ -1298,9 +1293,12 @@ export function waitForWorkerReady(
     }
     if (paneLooksReady(result.stdout)) return true;
     // Keep startup safety checks anchored to the visible pane. Only if the
-    // visible slice already proves a live Codex viewport do we consult recent
+    // visible slice already proves a live viewport do we consult recent
     // scrollback for the prompt/helper text that may have slipped below the fold.
-    if (!sharedPaneShowsCodexViewport(result.stdout)) return false;
+    const viewportDetected = workerProvider
+      ? workerProvider.detectViewport(result.stdout)
+      : sharedPaneShowsCodexViewport(result.stdout);
+    if (!viewportDetected) return false;
 
     const scrollbackResult = runTmux(sharedBuildCapturePaneArgv(target, 80));
     if (!scrollbackResult.ok) return false;

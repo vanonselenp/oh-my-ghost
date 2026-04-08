@@ -457,7 +457,7 @@ export async function scaleUp(
       const readyTimeoutMs = resolveWorkerReadyTimeoutMs(env);
       const skipReadyWait = env.OMX_TEAM_SKIP_READY_WAIT === '1';
       if (!skipReadyWait) {
-        const ready = waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId);
+        const ready = waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId, workerCliPlan[i]);
         if (!ready) {
           console.log(`[omx:scaling] Warning: worker ${workerName} did not become ready within timeout`);
         }
@@ -466,12 +466,14 @@ export async function scaleUp(
       // Get assigned tasks for this worker
       const workerTasks = persistedTasks.filter(t => t.owner === workerName);
 
+      const workerProvider = workerCliPlan[i] && globalRegistry.has(workerCliPlan[i]) ? globalRegistry.get(workerCliPlan[i]) : undefined;
       const inbox = generateInitialInbox(workerName, sanitized, agentType, workerTasks, {
         teamStateRoot,
         leaderCwd,
         workerRole,
         rolePromptContent: rawRolePromptContent ?? undefined,
         worktreeRootAgentsCanonical: Boolean(workerWorkspace?.worktreePath),
+        provider: workerProvider,
       });
 
       const trigger = generateTriggerMessage(
@@ -585,7 +587,7 @@ export async function scaleUp(
       }
       // Retry dispatch once if a trust prompt is blocking the worker pane (fixes #393).
       if (!outcome.ok && dismissTrustPromptIfPresent(sessionName, workerIndex, paneId)) {
-        waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId);
+        waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId, workerCliPlan[i]);
         const retry = await notifyWorkerPaneOutcome(sessionName, workerIndex, trigger, paneId, workerCliPlan[i]);
         if (retry.ok) {
           outcome = retry;

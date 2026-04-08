@@ -67,10 +67,8 @@ describe("worker bootstrap", () => {
   it("generateWorkerOverlay includes the team name", () => {
     const overlay = generateWorkerOverlay("my-team");
     assert.match(overlay, /team "my-team"/);
-    assert.match(
-      overlay,
-      /\$\{CODEX_HOME:-~\/\.codex\}\/skills\/worker\/SKILL\.md/,
-    );
+    // Global skill path is resolved to an absolute path at generation time
+    assert.match(overlay, /\/skills\/worker\/SKILL\.md/);
     assert.match(overlay, /<leader_cwd>\/\.codex\/skills\/worker\/SKILL\.md/);
     assert.match(overlay, /Resolve canonical team state root/i);
     assert.match(overlay, /<team_state_root>\/team\/my-team\/tasks/);
@@ -85,7 +83,7 @@ describe("worker bootstrap", () => {
     );
     assert.match(
       overlay,
-      /You may spawn Codex native subagents when parallel execution improves throughput/,
+      /You may spawn native subagents when parallel execution improves throughput/,
     );
     assert.match(
       overlay,
@@ -255,10 +253,8 @@ describe("worker bootstrap", () => {
     assert.match(inbox, /omx team api claim-task/);
     assert.match(inbox, /omx team api transition-task-status/);
     assert.match(inbox, /omx team api release-task-claim/);
-    assert.match(
-      inbox,
-      /\$\{CODEX_HOME:-~\/\.codex\}\/skills\/worker\/SKILL\.md/,
-    );
+    // Global skill path is resolved to an absolute path at generation time
+    assert.match(inbox, /\/skills\/worker\/SKILL\.md/);
     assert.match(inbox, /\/\.codex\/skills\/worker\/SKILL\.md/);
     assert.match(inbox, /ACK: worker-1 initialized/);
     assert.match(inbox, /Mailbox Delivery Protocol \(Required\)/);

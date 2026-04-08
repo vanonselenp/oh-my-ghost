@@ -785,6 +785,8 @@ async function prepareWorkerWorktreeShutdownReports(config: TeamConfig, leaderCw
 
 export interface TeamStartOptions {
   worktreeMode?: WorktreeMode;
+  /** Per-worker CLI provider names (e.g. `['codex','claude']`). Overrides env-based resolution. */
+  workerCliProviders?: string[];
 }
 
 interface ShutdownGateCounts {
@@ -1330,7 +1332,6 @@ export async function startTeam(
 
   // 2. Team name is already sanitized above.
   let sessionName = `omx-team-${sanitized}`;
-  const overlay = generateWorkerOverlay(sanitized);
   let workerInstructionsPath: string | null = null;
   let sessionCreated = false;
   const createdWorkerPaneIds: string[] = [];
@@ -1340,7 +1341,9 @@ export async function startTeam(
     existingRaw: process.env.OMX_TEAM_WORKER_LAUNCH_ARGS,
     fallbackModel: resolveAgentDefaultModel(agentType, process.env.CODEX_HOME),
   });
-  const workerCliPlan = resolveTeamWorkerCliPlan(workerCount, sharedWorkerLaunchArgs, process.env);
+  const workerCliPlan = options.workerCliProviders
+    ? options.workerCliProviders as TeamWorkerCli[]
+    : resolveTeamWorkerCliPlan(workerCount, sharedWorkerLaunchArgs, process.env);
   const workerReadyTimeoutMs = resolveWorkerReadyTimeoutMs(process.env);
   const skipWorkerReadyWait = shouldSkipWorkerReadyWait(process.env);
 
@@ -1386,6 +1389,7 @@ export async function startTeam(
     if (workspaceMode !== 'worktree') {
       const dominantCli = workerCliPlan.length > 0 && workerCliPlan.every(c => c === workerCliPlan[0]) ? workerCliPlan[0] : undefined;
       const dominantProvider = dominantCli && globalRegistry.has(dominantCli) ? globalRegistry.get(dominantCli) : undefined;
+      const overlay = generateWorkerOverlay(sanitized, dominantProvider);
       workerInstructionsPath = await writeTeamWorkerInstructionsFile(sanitized, leaderCwd, overlay, dominantProvider);
       setTeamModelInstructionsFile(sanitized, workerInstructionsPath);
     }
@@ -1459,6 +1463,7 @@ export async function startTeam(
         workerRole,
         rolePromptContent: rawRolePromptContent ?? undefined,
         worktreeRootAgentsCanonical: Boolean(workerWorkspace.worktreePath),
+        provider: workerProvider,
       });
       const trigger = generateTriggerMessage(
         workerName,
@@ -1615,7 +1620,7 @@ export async function startTeam(
 
       // Wait for worker readiness
       if (workerLaunchMode === 'interactive' && !skipWorkerReadyWait && !initialPrompt) {
-        const ready = waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId);
+        const ready = waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId, workerCliPlan[i - 1]);
         if (!ready) {
           throw new Error(`Worker ${workerName} did not become ready in tmux session ${sessionName}`);
         }
@@ -1650,7 +1655,7 @@ export async function startTeam(
             // Check for trust prompt blocking the worker and dismiss it before retry
             if (workerLaunchMode === 'interactive') {
               if (dismissTrustPromptIfPresent(sessionName, i, paneId)) {
-                waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId);
+                waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId, workerCliPlan[i - 1]);
               } else {
                 sleepFractionalSeconds(startupRetryDelayS);
               }
@@ -2112,6 +2117,7 @@ export async function assignTask(
             workerInfo.index,
             resolveWorkerReadyTimeoutMs(process.env),
             workerInfo.pane_id,
+            workerInfo.worker_cli,
           );
         } else {
           await new Promise<void>(r => setTimeout(r, assignRetryDelayS * 1000));

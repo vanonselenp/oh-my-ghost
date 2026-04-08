@@ -22,7 +22,7 @@ interface CliInput {
   pollIntervalMs?: number;
 }
 
-import { globalRegistry, initBuiltinProviders } from '../providers/registry.js';
+import { globalRegistry } from '../providers/registry.js';
 
 type TeamWorkerProvider = string;
 
@@ -136,9 +136,6 @@ export function normalizeAgentTypes(raw: string[], workerCount: number): TeamWor
 async function main(): Promise<void> {
   const startTime = Date.now();
 
-  // Initialize provider registry before any team operations
-  await initBuiltinProviders();
-
   // Read stdin
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -241,21 +238,15 @@ async function main(): Promise<void> {
   const agentType = 'executor';
   try {
     const providers = normalizeAgentTypes(agentTypes, workerCount);
-    const previousCliMap = process.env.OMX_TEAM_WORKER_CLI_MAP;
-    try {
-      process.env.OMX_TEAM_WORKER_CLI_MAP = providers.join(',');
-      runtime = await startTeam(
-        teamName,
-        tasks.map(t => t.subject).join('; '),
-        agentType,
-        workerCount,
-        tasks,
-        cwd,
-      );
-    } finally {
-      if (typeof previousCliMap === 'string') process.env.OMX_TEAM_WORKER_CLI_MAP = previousCliMap;
-      else delete process.env.OMX_TEAM_WORKER_CLI_MAP;
-    }
+    runtime = await startTeam(
+      teamName,
+      tasks.map(t => t.subject).join('; '),
+      agentType,
+      workerCount,
+      tasks,
+      cwd,
+      { workerCliProviders: providers },
+    );
   } catch (err) {
     process.stderr.write(`[runtime-cli] startTeam failed: ${err}\n`);
     process.exit(1);
