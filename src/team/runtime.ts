@@ -108,6 +108,7 @@ import {
 } from './model-contract.js';
 import { resolveCanonicalTeamStateRoot } from './state-root.js';
 import { inferPhaseTargetFromTaskCounts, reconcilePhaseStateForMonitor } from './phase-controller.js';
+import { globalRegistry } from '../providers/index.js';
 import { getTeamTmuxSessions } from '../notifications/tmux.js';
 import { hasStructuredVerificationEvidence } from '../verification/verifier.js';
 import { buildRebalanceDecisions } from './rebalance-policy.js';
@@ -784,6 +785,8 @@ async function prepareWorkerWorktreeShutdownReports(config: TeamConfig, leaderCw
 
 export interface TeamStartOptions {
   worktreeMode?: WorktreeMode;
+  /** Per-worker CLI provider names (e.g. `['codex','claude']`). Overrides env-based resolution. */
+  workerCliProviders?: string[];
 }
 
 interface ShutdownGateCounts {
@@ -1142,7 +1145,7 @@ function spawnPromptWorker(
   workerCwd: string,
   launchArgs: string[],
   workerEnv: Record<string, string>,
-  workerCli: 'codex' | 'claude' | 'gemini',
+  workerCli: TeamWorkerCli,
   initialPrompt?: string,
 ): ChildProcessByStdio<Writable, null, null> {
   const processSpec = buildWorkerProcessLaunchSpec(
@@ -1214,7 +1217,7 @@ export function resolveWorkerLaunchArgsFromEnv(
 function resolveEffectiveWorkerCliForStartupLog(
   resolvedLaunchArgs: string[],
   env: NodeJS.ProcessEnv,
-): 'codex' | 'claude' | 'gemini' {
+): TeamWorkerCli {
   const rawCliMap = String(env.OMX_TEAM_WORKER_CLI_MAP ?? '').trim();
   if (rawCliMap !== '') {
     const entries = rawCliMap
@@ -1226,14 +1229,20 @@ function resolveEffectiveWorkerCliForStartupLog(
         ...env,
         OMX_TEAM_WORKER_CLI: 'auto',
       });
-      const resolvedMap = entries.map((entry): 'codex' | 'claude' | 'gemini' | null => {
+      const resolvedMap = entries.map((entry): TeamWorkerCli | null => {
         if (entry === 'auto') return autoCli;
-        if (entry === 'codex' || entry === 'claude' || entry === 'gemini') return entry;
+        if (globalRegistry.has(entry)) return entry as TeamWorkerCli;
         return null;
       });
-      if (resolvedMap.every((entry) => entry === 'claude')) return 'claude';
-      if (resolvedMap.every((entry) => entry === 'gemini')) return 'gemini';
-      if (resolvedMap.some((entry) => entry === 'codex')) return 'codex';
+      const nonNull = resolvedMap.filter((e): e is TeamWorkerCli => e !== null);
+      if (nonNull.length > 0) {
+        const first = nonNull[0]!;
+        if (nonNull.every((e) => e === first)) return first;
+        // Mixed providers: return the most common one
+        const counts = new Map<TeamWorkerCli, number>();
+        for (const e of nonNull) counts.set(e, (counts.get(e) ?? 0) + 1);
+        return [...counts.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+      }
     }
   }
 
@@ -1323,7 +1332,6 @@ export async function startTeam(
 
   // 2. Team name is already sanitized above.
   let sessionName = `omx-team-${sanitized}`;
-  const overlay = generateWorkerOverlay(sanitized);
   let workerInstructionsPath: string | null = null;
   let sessionCreated = false;
   const createdWorkerPaneIds: string[] = [];
@@ -1333,7 +1341,9 @@ export async function startTeam(
     existingRaw: process.env.OMX_TEAM_WORKER_LAUNCH_ARGS,
     fallbackModel: resolveAgentDefaultModel(agentType, process.env.CODEX_HOME),
   });
-  const workerCliPlan = resolveTeamWorkerCliPlan(workerCount, sharedWorkerLaunchArgs, process.env);
+  const workerCliPlan = options.workerCliProviders
+    ? options.workerCliProviders as TeamWorkerCli[]
+    : resolveTeamWorkerCliPlan(workerCount, sharedWorkerLaunchArgs, process.env);
   const workerReadyTimeoutMs = resolveWorkerReadyTimeoutMs(process.env);
   const skipWorkerReadyWait = shouldSkipWorkerReadyWait(process.env);
 
@@ -1377,7 +1387,10 @@ export async function startTeam(
 
     // 5. Write team-scoped worker instructions file only for single-workspace mode.
     if (workspaceMode !== 'worktree') {
-      workerInstructionsPath = await writeTeamWorkerInstructionsFile(sanitized, leaderCwd, overlay);
+      const dominantCli = workerCliPlan.length > 0 && workerCliPlan.every(c => c === workerCliPlan[0]) ? workerCliPlan[0] : undefined;
+      const dominantProvider = dominantCli && globalRegistry.has(dominantCli) ? globalRegistry.get(dominantCli) : undefined;
+      const overlay = generateWorkerOverlay(sanitized, dominantProvider);
+      workerInstructionsPath = await writeTeamWorkerInstructionsFile(sanitized, leaderCwd, overlay, dominantProvider);
       setTeamModelInstructionsFile(sanitized, workerInstructionsPath);
     }
 
@@ -1427,7 +1440,9 @@ export async function startTeam(
         ? composeRoleInstructionsForRole(workerRole, rawRolePromptContent, resolvedWorkerModel)
         : null;
       const workerWorktreePath = workerWorkspace.worktreePath ?? undefined;
-      const fallbackInstructionsPath = workerInstructionsPath ?? join(leaderCwd, 'AGENTS.md');
+      const workerProviderName = workerCliPlan[i - 1];
+      const workerProvider = workerProviderName && globalRegistry.has(workerProviderName) ? globalRegistry.get(workerProviderName) : undefined;
+      const fallbackInstructionsPath = workerInstructionsPath ?? join(leaderCwd, workerProvider?.guidanceFile() ?? 'AGENTS.md');
       const instructionsFilePath = workerWorktreePath
         ? await writeWorkerWorktreeRootAgentsFile({
           teamName: sanitized,
@@ -1437,9 +1452,10 @@ export async function startTeam(
           teamStateRoot,
           leaderCwd,
           worktreePath: workerWorktreePath,
+          provider: workerProvider,
         })
         : rolePromptContent
-          ? await writeWorkerRoleInstructionsFile(sanitized, workerName, leaderCwd, fallbackInstructionsPath, workerRole, rolePromptContent)
+          ? await writeWorkerRoleInstructionsFile(sanitized, workerName, leaderCwd, fallbackInstructionsPath, workerRole, rolePromptContent, workerProvider)
           : fallbackInstructionsPath;
       const inbox = generateInitialInbox(workerName, sanitized, agentType, workerTasks, {
         teamStateRoot,
@@ -1447,6 +1463,7 @@ export async function startTeam(
         workerRole,
         rolePromptContent: rawRolePromptContent ?? undefined,
         worktreeRootAgentsCanonical: Boolean(workerWorkspace.worktreePath),
+        provider: workerProvider,
       });
       const trigger = generateTriggerMessage(
         workerName,
@@ -1603,7 +1620,7 @@ export async function startTeam(
 
       // Wait for worker readiness
       if (workerLaunchMode === 'interactive' && !skipWorkerReadyWait && !initialPrompt) {
-        const ready = waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId);
+        const ready = waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId, workerCliPlan[i - 1]);
         if (!ready) {
           throw new Error(`Worker ${workerName} did not become ready in tmux session ${sessionName}`);
         }
@@ -1638,7 +1655,7 @@ export async function startTeam(
             // Check for trust prompt blocking the worker and dismiss it before retry
             if (workerLaunchMode === 'interactive') {
               if (dismissTrustPromptIfPresent(sessionName, i, paneId)) {
-                waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId);
+                waitForWorkerReady(sessionName, i, workerReadyTimeoutMs, paneId, workerCliPlan[i - 1]);
               } else {
                 sleepFractionalSeconds(startupRetryDelayS);
               }
@@ -1733,11 +1750,13 @@ export async function startTeam(
       for (const worker of config.workers) {
         if (!worker.worktree_path || !worker.team_state_root) continue;
         try {
+          const workerProvider = worker.worker_cli && globalRegistry.has(worker.worker_cli) ? globalRegistry.get(worker.worker_cli) : undefined;
           await removeWorkerWorktreeRootAgentsFile(
             sanitized,
             worker.name,
             worker.team_state_root,
             worker.worktree_path,
+            workerProvider,
           );
         } catch (cleanupError) {
           rollbackErrors.push(`removeWorkerWorktreeRootAgentsFile(${worker.name}): ${String(cleanupError)}`);
@@ -2098,6 +2117,7 @@ export async function assignTask(
             workerInfo.index,
             resolveWorkerReadyTimeoutMs(process.env),
             workerInfo.pane_id,
+            workerInfo.worker_cli,
           );
         } else {
           await new Promise<void>(r => setTimeout(r, assignRetryDelayS * 1000));
@@ -2361,11 +2381,13 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
   for (const worker of config.workers) {
     if (!worker.worktree_path || !worker.team_state_root) continue;
     try {
+      const workerProvider = worker.worker_cli && globalRegistry.has(worker.worker_cli) ? globalRegistry.get(worker.worker_cli) : undefined;
       await removeWorkerWorktreeRootAgentsFile(
         sanitized,
         worker.name,
         worker.team_state_root,
         worker.worktree_path,
+        workerProvider,
       );
     } catch (err) {
       process.stderr.write(`[team/runtime] operation failed: ${err}\n`);

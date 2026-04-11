@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -153,7 +153,7 @@ describe('omx ask', () => {
   });
 
   it('uses package-root advisor script path from non-package cwd and still writes artifact', async () => {
-    const wd = await mkdtemp(join(tmpdir(), 'omx-ask-nonroot-'));
+    const wd = realpathSync(await mkdtemp(join(tmpdir(), 'omx-ask-nonroot-')));
     try {
       const fakeBin = join(wd, 'bin');
       await mkdir(fakeBin, { recursive: true });

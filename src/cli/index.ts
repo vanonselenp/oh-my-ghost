@@ -69,6 +69,7 @@ import {
 } from "../team/tmux-session.js";
 import { getPackageRoot } from "../utils/package.js";
 import { codexConfigPath } from "../utils/paths.js";
+import { escapeTomlString } from "../utils/toml.js";
 import { repairConfigIfNeeded } from "../config/generator.js";
 import { HUD_TMUX_HEIGHT_LINES } from "../hud/constants.js";
 import {
@@ -1296,10 +1297,6 @@ function parseTomlStringValue(value: string): string {
     return trimmed.slice(1, -1);
   }
   return trimmed;
-}
-
-function escapeTomlString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function sanitizeTmuxToken(value: string): string {

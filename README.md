@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://yeachan-heo.github.io/oh-my-codex-website/omx-character-nobg.png" alt="oh-my-codex character" width="280">
   <br>
-  <em>Start Codex stronger, then let OMX add better prompts, workflows, and runtime help when the work grows.</em>
+  <em>Start your AI CLI stronger, then let OMX add better prompts, workflows, and runtime help when the work grows.</em>
 </p>
 
 [![npm version](https://img.shields.io/npm/v/oh-my-codex)](https://www.npmjs.com/package/oh-my-codex)
@@ -14,17 +14,17 @@
 **Website:** https://yeachan-heo.github.io/oh-my-codex-website/  
 **Docs:** [Getting Started](./docs/getting-started.html) · [Agents](./docs/agents.html) · [Skills](./docs/skills.html) · [Integrations](./docs/integrations.html) · [Demo](./DEMO.md) · [OpenClaw guide](./docs/openclaw-integration.md)
 
-OMX is a workflow layer for [OpenAI Codex CLI](https://github.com/openai/codex).
+OMX is a workflow layer for AI coding CLIs.
 
-It keeps Codex as the execution engine and makes it easier to:
-- start a stronger Codex session by default
+It works with [Codex](https://github.com/openai/codex), [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://github.com/opencode-ai/opencode), and Gemini CLI as execution engines, and makes it easier to:
+- start a stronger session by default
 - run one consistent workflow from clarification to completion
 - invoke the canonical skills with `$deep-interview`, `$ralplan`, `$team`, and `$ralph`
 - keep project guidance, plans, logs, and state in `.omx/`
 
 ## Recommended default flow
 
-If you want the default OMX experience, start here:
+**With Codex:**
 
 ```bash
 npm install -g @openai/codex oh-my-codex
@@ -32,7 +32,19 @@ omx setup
 omx --madmax --high
 ```
 
-Then work normally inside Codex:
+`--madmax` bypasses approval prompts and `--high` sets high reasoning effort — both are Codex-specific flags. See `omx --help` for the full list.
+
+**With Claude Code, OpenCode, or Gemini:**
+
+```bash
+npm install -g oh-my-codex
+omx setup
+claude   # or: opencode / gemini
+```
+
+`omx setup` installs skills and guidance files into each installed CLI's config directory (`~/.claude/`, `~/.opencode/`, etc.). Then launch your CLI directly — OMX's skills are available inside it.
+
+**The canonical workflow (works in any supported CLI):**
 
 ```text
 $deep-interview "clarify the authentication change"
@@ -41,38 +53,34 @@ $ralph "carry the approved plan to completion"
 $team 3:executor "execute the approved plan in parallel"
 ```
 
-That is the main path.
-Start OMX strongly, clarify first when needed, approve the plan, then choose `$team` for coordinated parallel execution or `$ralph` for the persistent completion loop.
+Clarify first when needed, approve the plan, then choose `$team` for coordinated parallel execution or `$ralph` for the persistent completion loop.
 
 ## What OMX is for
 
-Use OMX if you already like Codex and want a better day-to-day runtime around it:
+Use OMX if you already like an AI coding CLI and want a better day-to-day runtime around it:
 - a standard workflow built around `$deep-interview`, `$ralplan`, `$team`, and `$ralph`
 - specialist roles and supporting skills when the task needs them
-- project guidance through scoped `AGENTS.md`
+- project guidance through scoped `AGENTS.md` or `CLAUDE.md`
 - durable state under `.omx/` for plans, logs, memory, and mode tracking
 
-If you want plain Codex with no extra workflow layer, you probably do not need OMX.
+If you want plain CLI usage with no extra workflow layer, you probably do not need OMX.
 
 ## Quick start
 
 ### Requirements
 
 - Node.js 20+
-- Codex CLI installed: `npm install -g @openai/codex`
-- Codex auth configured
+- At least one supported CLI execution engine:
+  - Codex: `npm install -g @openai/codex`
+  - Claude Code: `npm install -g @anthropic-ai/claude-code`
+  - OpenCode: see [opencode-ai/opencode](https://github.com/opencode-ai/opencode)
+  - Gemini CLI: `npm install -g @google/gemini-cli`
 - `tmux` on macOS/Linux if you later want the durable team runtime
 - `psmux` on native Windows if you later want Windows team mode
 
 ### A good first session
 
-Launch OMX the recommended way:
-
-```bash
-omx --madmax --high
-```
-
-Then try the canonical workflow:
+Start your CLI (Codex users can use `omx --madmax --high`; Claude Code / OpenCode / Gemini users launch their CLI directly after `omx setup`), then try the canonical workflow:
 
 ```text
 $deep-interview "clarify the authentication change"
@@ -85,29 +93,15 @@ Use `$team` when the approved plan needs coordinated parallel work, or `$ralph` 
 
 ## A simple mental model
 
-OMX does **not** replace Codex.
+OMX does **not** replace your CLI execution engine.
 
 It adds a better working layer around it:
-- **Codex** does the actual agent work
+- **Your CLI** (Codex, Claude Code, OpenCode, or Gemini) does the actual agent work
 - **OMX role keywords** make useful roles reusable
 - **OMX skills** make common workflows reusable
 - **`.omx/`** stores plans, logs, memory, and runtime state
 
 Most users should think of OMX as **better task routing + better workflow + better runtime**, not as a command surface to operate manually all day.
-
-## Start here if you are new
-
-1. Run `omx setup`
-2. Launch with `omx --madmax --high`
-3. Use `$deep-interview "..."` when the request or boundaries are still unclear
-4. Use `$ralplan "..."` to approve the plan and review tradeoffs
-5. Choose `$team` for coordinated parallel execution or `$ralph` for persistent completion loops
-
-## Recommended workflow
-
-1. `$deep-interview` — clarify scope when the request or boundaries are still vague.
-2. `$ralplan` — turn that clarified scope into an approved architecture and implementation plan.
-3. `$team` or `$ralph` — use `$team` for coordinated parallel execution, or `$ralph` when you want a persistent completion loop with one owner.
 
 ## Common in-session surfaces
 
@@ -134,10 +128,20 @@ omx team resume <team-name>
 omx team shutdown <team-name>
 ```
 
+The team runtime supports multiple execution engines. Set `OMX_TEAM_WORKER_CLI` to choose a provider for all workers, or use `OMX_TEAM_WORKER_CLI_MAP` for per-worker assignment:
+
+```bash
+# All workers use Claude Code
+OMX_TEAM_WORKER_CLI=claude omx team 3:executor "..."
+
+# Mixed team: worker 1 uses Codex, worker 2 uses Claude Code, worker 3 uses OpenCode
+OMX_TEAM_WORKER_CLI_MAP=codex,claude,opencode omx team 3:executor "..."
+```
+
 ### Setup, doctor, and HUD
 
 These are operator/support surfaces:
-- `omx setup` installs prompts, skills, config, and AGENTS scaffolding
+- `omx setup` installs skills, prompts, MCP config, and guidance scaffolding (`AGENTS.md` for Codex/OpenCode/Gemini, `CLAUDE.md` for Claude Code) into each detected CLI's config directory
 - `omx doctor` verifies the install when something seems wrong
 - `omx hud --watch` is a monitoring/status surface, not the primary user workflow
 

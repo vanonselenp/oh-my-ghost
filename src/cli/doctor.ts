@@ -10,6 +10,7 @@ import {
   userSkillsDir, projectSkillsDir, omxStateDir, detectLegacySkillRootOverlap,
 } from '../utils/paths.js';
 import { classifySpawnError, spawnPlatformCommandSync } from '../utils/platform-command.js';
+import { globalRegistry, initBuiltinProviders } from '../providers/registry.js';
 import { getCatalogExpectations } from './catalog-contract.js';
 import { parse as parseToml } from '@iarna/toml';
 import { resolvePackagedExploreHarnessCommand, EXPLORE_BIN_ENV } from './explore.js';
@@ -152,6 +153,24 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
 
   // Check 9: MCP servers configured
   checks.push(await checkMcpServers(paths.configPath));
+
+  // Check registered CLI providers (verbose only — avoids breaking output contract tests)
+  if (options.verbose) {
+    try {
+      await initBuiltinProviders();
+      for (const name of globalRegistry.list()) {
+        const provider = globalRegistry.get(name);
+        try {
+          provider.assertBinaryAvailable();
+          checks.push({ name: `Provider: ${name}`, status: 'pass', message: `${provider.binaryName} found on PATH` });
+        } catch {
+          checks.push({ name: `Provider: ${name}`, status: 'warn', message: `${provider.binaryName} not on PATH (optional)` });
+        }
+      }
+    } catch {
+      // Provider registry init failed — not critical for doctor
+    }
+  }
 
   // Print results
   let passCount = 0;

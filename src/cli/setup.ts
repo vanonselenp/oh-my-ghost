@@ -51,6 +51,9 @@ import {
   upsertAgentsModelTable,
 } from "../utils/agents-model-table.js";
 import { spawnPlatformCommandSync } from "../utils/platform-command.js";
+import { globalRegistry, initBuiltinProviders } from "../providers/registry.js";
+import { buildOmxConfig, mergeConfigForProvider } from "../config/generator.js";
+import type { CliProvider } from "../providers/types.js";
 
 interface SetupOptions {
   codexVersionProbe?: () => string | null;
@@ -64,6 +67,8 @@ interface SetupOptions {
     targetModel: string,
   ) => Promise<boolean>;
   mcpRegistryCandidates?: string[];
+  /** Additional CLI providers to configure (e.g. ["claude", "opencode"]). */
+  providers?: string[];
 }
 
 /**
@@ -961,6 +966,44 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
     console.log();
   }
 
+  // Provider-aware setup: configure additional CLI providers if requested
+  if (options.providers && options.providers.length > 0) {
+    await initBuiltinProviders();
+    console.log("\n[+] Configuring additional CLI providers...");
+    for (const providerName of options.providers) {
+      if (!globalRegistry.has(providerName)) {
+        console.log(`  ⚠ Unknown provider "${providerName}", skipping.`);
+        continue;
+      }
+      const provider = globalRegistry.get(providerName);
+      try {
+        if (!dryRun) {
+          await mergeConfigForProvider(provider, pkgRoot, {
+            modelOverride: undefined,
+            verbose,
+          });
+          // Copy skills and prompts to provider directories
+          await copyDirectoryToProvider(
+            join(pkgRoot, "skills"),
+            provider.skillsDir(),
+            dryRun,
+            verbose,
+          );
+          await copyDirectoryToProvider(
+            join(pkgRoot, "prompts"),
+            provider.promptsDir(),
+            dryRun,
+            verbose,
+          );
+        }
+        console.log(`  ✓ ${providerName}: config written to ${provider.configPath()}`);
+      } catch (err) {
+        console.log(`  ✗ ${providerName}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    console.log();
+  }
+
   console.log('Setup complete! Run "omx doctor" to verify installation.');
   console.log("\nNext steps:");
   console.log("  1. Start Codex CLI in your project directory");
@@ -977,6 +1020,36 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
   );
   if (isGitHubCliConfigured()) {
     console.log("\nSupport the project: gh repo star Yeachan-Heo/oh-my-codex");
+  }
+}
+
+/**
+ * Copy a directory of files to a provider's target directory.
+ * Used for copying skills and prompts to non-Codex providers.
+ */
+async function copyDirectoryToProvider(
+  srcDir: string,
+  dstDir: string,
+  dryRun: boolean,
+  verbose: boolean,
+): Promise<void> {
+  if (!existsSync(srcDir)) return;
+  if (!dryRun) {
+    await mkdir(dstDir, { recursive: true });
+  }
+  const entries = await readdir(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = join(srcDir, entry.name);
+    const dstPath = join(dstDir, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirectoryToProvider(srcPath, dstPath, dryRun, verbose);
+    } else if (entry.isFile()) {
+      if (!dryRun) {
+        await mkdir(dirname(dstPath), { recursive: true });
+        await copyFile(srcPath, dstPath);
+      }
+      if (verbose) console.log(`    ${relative(process.cwd(), dstPath)}`);
+    }
   }
 }
 

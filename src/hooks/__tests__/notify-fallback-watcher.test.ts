@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -1470,7 +1471,7 @@ describe('notify-fallback watcher', () => {
   });
 
   it('globally debounces Ralph continue steer across concurrent watcher instances', async () => {
-    const wd = await mkdtemp(join(tmpdir(), 'omx-fallback-ralph-global-debounce-'));
+    const wd = realpathSync(await mkdtemp(join(tmpdir(), 'omx-fallback-ralph-global-debounce-')));
     const fakeBinDir = join(wd, 'fake-bin');
     const tmuxLogPath = join(wd, 'tmux.log');
     const stateDir = join(wd, '.omx', 'state');

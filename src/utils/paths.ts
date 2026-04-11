@@ -1,6 +1,10 @@
 /**
  * Path utilities for oh-my-codex
- * Resolves Codex CLI config, skills, prompts, and state directories
+ * Resolves CLI config, skills, prompts, and state directories.
+ *
+ * Provider-aware functions (cliConfigHome, cliConfigPath, etc.) delegate to
+ * the active CliProvider.  Legacy codex* functions remain as shims that
+ * default to the Codex provider paths for backward compatibility.
  */
 
 import { createHash } from "crypto";
@@ -9,38 +13,83 @@ import { readdir, readFile, realpath } from "fs/promises";
 import { dirname, join } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
+import type { CliProvider } from "../providers/types.js";
 
-/** Codex CLI home directory (~/.codex/) */
+// ---------------------------------------------------------------------------
+// Provider-aware path functions
+// ---------------------------------------------------------------------------
+
+/** CLI config home directory, resolved from the given provider. */
+export function cliConfigHome(provider: CliProvider): string {
+  return provider.configHome();
+}
+
+/** CLI config file path, resolved from the given provider. */
+export function cliConfigPath(provider: CliProvider): string {
+  return provider.configPath();
+}
+
+/** CLI prompts directory, resolved from the given provider. */
+export function cliPromptsDir(provider: CliProvider): string {
+  return provider.promptsDir();
+}
+
+/** CLI agents directory, resolved from the given provider. */
+export function cliAgentsDir(provider: CliProvider): string {
+  return provider.agentsDir();
+}
+
+/** Project-level agents directory, resolved from the given provider. */
+export function projectAgentsDir(provider: CliProvider, projectRoot?: string): string {
+  return provider.projectAgentsDir(projectRoot || process.cwd());
+}
+
+/** User-level skills directory, resolved from the given provider. */
+export function cliSkillsDir(provider: CliProvider): string {
+  return provider.skillsDir();
+}
+
+/** Project-level skills directory, resolved from the given provider. */
+export function cliProjectSkillsDir(provider: CliProvider, projectRoot?: string): string {
+  return provider.projectSkillsDir(projectRoot || process.cwd());
+}
+
+// ---------------------------------------------------------------------------
+// Legacy Codex-specific shims (delegate to hardcoded Codex paths)
+// These remain for backward compatibility until all call sites are migrated.
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use cliConfigHome(provider) instead. */
 export function codexHome(): string {
   return process.env.CODEX_HOME || join(homedir(), ".codex");
 }
 
-/** Codex config file path (~/.codex/config.toml) */
+/** @deprecated Use cliConfigPath(provider) instead. */
 export function codexConfigPath(): string {
   return join(codexHome(), "config.toml");
 }
 
-/** Codex prompts directory (~/.codex/prompts/) */
+/** @deprecated Use cliPromptsDir(provider) instead. */
 export function codexPromptsDir(): string {
   return join(codexHome(), "prompts");
 }
 
-/** Codex native agents directory (~/.codex/agents/) */
+/** @deprecated Use cliAgentsDir(provider) instead. */
 export function codexAgentsDir(codexHomeDir?: string): string {
   return join(codexHomeDir || codexHome(), "agents");
 }
 
-/** Project-level Codex native agents directory (.codex/agents/) */
+/** @deprecated Use projectAgentsDir(provider) instead. */
 export function projectCodexAgentsDir(projectRoot?: string): string {
   return join(projectRoot || process.cwd(), ".codex", "agents");
 }
 
-/** User-level skills directory ($CODEX_HOME/skills, defaults to ~/.codex/skills/) */
+/** @deprecated Use cliSkillsDir(provider) instead. */
 export function userSkillsDir(): string {
   return join(codexHome(), "skills");
 }
 
-/** Project-level skills directory (.codex/skills/) */
+/** @deprecated Use cliProjectSkillsDir(provider) instead. */
 export function projectSkillsDir(projectRoot?: string): string {
   return join(projectRoot || process.cwd(), ".codex", "skills");
 }
@@ -130,8 +179,10 @@ export async function detectLegacySkillRootOverlap(
     legacyExists ? realpath(legacyDir).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const canonicalHashes = await hashSkillDirectory(canonicalSkills);
-  const legacyHashes = await hashSkillDirectory(legacySkills);
+  const [canonicalHashes, legacyHashes] = await Promise.all([
+    hashSkillDirectory(canonicalSkills),
+    hashSkillDirectory(legacySkills),
+  ]);
   const canonicalNames = new Set(canonicalSkills.map((skill) => skill.name));
   const legacyNames = new Set(legacySkills.map((skill) => skill.name));
   const overlappingSkillNames = [...canonicalNames]

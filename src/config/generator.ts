@@ -16,6 +16,7 @@ import { join } from "path";
 import { AGENT_DEFINITIONS } from "../agents/definitions.js";
 import { DEFAULT_FRONTIER_MODEL } from "./models.js";
 import type { UnifiedMcpRegistryServer } from "./mcp-registry.js";
+import { escapeTomlString } from "../utils/toml.js";
 
 interface MergeOptions {
   includeTui?: boolean;
@@ -23,10 +24,6 @@ interface MergeOptions {
   sharedMcpServers?: UnifiedMcpRegistryServer[];
   sharedMcpRegistrySource?: string;
   verbose?: boolean;
-}
-
-function escapeTomlString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 // ---------------------------------------------------------------------------
@@ -899,5 +896,101 @@ export async function mergeConfig(
   await writeFile(configPath, finalConfig);
   if (options.verbose) {
     console.log(`  Written to ${configPath}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Provider-agnostic config builder
+// ---------------------------------------------------------------------------
+
+import type { OmxConfig, OmxMcpServer, CliProvider } from "../providers/types.js";
+
+/**
+ * Build a provider-agnostic OmxConfig from the package root.
+ * This is the intermediate representation that providers serialize
+ * into their native config format via provider.writeConfig().
+ */
+export function buildOmxConfig(pkgRoot: string, options: { modelOverride?: string } = {}): OmxConfig {
+  const notifyHookPath = join(pkgRoot, "dist", "scripts", "notify-hook.js");
+  const selectedModel = options.modelOverride ?? DEFAULT_SETUP_MODEL;
+
+  const mcpServers: OmxMcpServer[] = [
+    {
+      name: "omx_state",
+      command: "node",
+      args: [join(pkgRoot, "dist", "mcp", "state-server.js")],
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      name: "omx_memory",
+      command: "node",
+      args: [join(pkgRoot, "dist", "mcp", "memory-server.js")],
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      name: "omx_code_intel",
+      command: "node",
+      args: [join(pkgRoot, "dist", "mcp", "code-intel-server.js")],
+      enabled: true,
+      timeout: 10000,
+    },
+    {
+      name: "omx_trace",
+      command: "node",
+      args: [join(pkgRoot, "dist", "mcp", "trace-server.js")],
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      name: "omx_team_run",
+      command: "node",
+      args: [join(pkgRoot, "dist", "mcp", "team-server.js")],
+      enabled: true,
+      timeout: 5000,
+    },
+  ];
+
+  return {
+    mcpServers,
+    reasoningEffort: "high",
+    developerInstructions:
+      "You have oh-my-codex installed. Your guidance file is your " +
+      "orchestration brain and the main orchestration surface. " +
+      "Use skill/keyword routing like $name plus spawned role-specialized subagents for specialized work. " +
+      "Skills are loaded from installed SKILL.md files in your CLI's skills directory. " +
+      "Use workflow skills via $name when explicitly invoked or clearly routed by your guidance file. " +
+      "Treat installed prompts as narrower internal execution surfaces under guidance file authority, even when user-facing docs prefer $name keywords.",
+    model: selectedModel,
+    modelContextWindow:
+      selectedModel === DEFAULT_SETUP_MODEL
+        ? DEFAULT_SETUP_MODEL_CONTEXT_WINDOW
+        : undefined,
+    modelAutoCompactTokenLimit:
+      selectedModel === DEFAULT_SETUP_MODEL
+        ? DEFAULT_SETUP_MODEL_AUTO_COMPACT_TOKEN_LIMIT
+        : undefined,
+    notifyHookPath,
+    env: {
+      [OMX_EXPLORE_CMD_ENV]: OMX_EXPLORE_ROUTING_DEFAULT,
+    },
+  };
+}
+
+/**
+ * Merge OMX config using a specific CLI provider.
+ * Builds a provider-agnostic OmxConfig then delegates serialisation
+ * to the provider's native writeConfig().
+ */
+export async function mergeConfigForProvider(
+  provider: CliProvider,
+  pkgRoot: string,
+  options: { modelOverride?: string; verbose?: boolean } = {},
+): Promise<void> {
+  const config = buildOmxConfig(pkgRoot, { modelOverride: options.modelOverride });
+  await provider.writeConfig(config);
+  if (options.verbose) {
+    console.log(`  Written ${provider.name} config to ${provider.configPath()}`);
   }
 }

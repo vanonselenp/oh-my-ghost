@@ -514,7 +514,10 @@ async function withRalphSteerLock<T>(task: () => Promise<T>): Promise<T | null> 
       if (code !== 'EEXIST') throw error;
       const existing = await readRalphSteerLock(ralphSteerLockPath);
       const lockAgeMs = parseIsoMillis(existing?.acquired_at) ?? 0;
-      const stale = !existing || !isPidAlive(existing.pid) || (lockAgeMs > 0 && Date.now() - lockAgeMs > RALPH_STEER_LOCK_STALE_MS);
+      // If the lock file exists but can't be parsed, treat it as busy (not stale):
+      // the lock holder may be between open() and writeFile(), so clearing it would
+      // allow two concurrent instances to both acquire the lock.
+      const stale = existing !== null && (!isPidAlive(existing.pid) || (lockAgeMs > 0 && Date.now() - lockAgeMs > RALPH_STEER_LOCK_STALE_MS));
       if (stale) {
         await unlink(ralphSteerLockPath).catch(() => {});
         continue;

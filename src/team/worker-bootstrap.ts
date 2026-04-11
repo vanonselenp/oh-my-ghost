@@ -2,13 +2,15 @@ import type { TeamTask } from "./state.js";
 import { existsSync } from "fs";
 import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
 import { dirname, join } from "path";
+import { homedir } from "os";
 import { execFileSync } from "child_process";
 import {
   getFixLoopInstructions,
   getVerificationInstructions,
 } from "../verification/verifier.js";
-import { codexHome, listInstalledSkillDirectories } from "../utils/paths.js";
+import { cliConfigHome, listInstalledSkillDirectories } from "../utils/paths.js";
 import { sleep } from "../utils/sleep.js";
+import type { CliProvider } from "../providers/types.js";
 
 const TEAM_OVERLAY_START = "<!-- OMX:TEAM:WORKER:START -->";
 const TEAM_OVERLAY_END = "<!-- OMX:TEAM:WORKER:END -->";
@@ -27,6 +29,51 @@ interface WorkerRootAgentsOptions {
   teamStateRoot: string;
   leaderCwd: string;
   worktreePath: string;
+  /** CLI provider for this worker. Determines guidance file (AGENTS.md vs CLAUDE.md etc). */
+  provider?: CliProvider;
+}
+
+/** Get the guidance filename for the given provider, defaulting to AGENTS.md. */
+function guidanceFileName(provider?: CliProvider): string {
+  return provider?.guidanceFile() ?? "AGENTS.md";
+}
+
+/** Get the CLI config home for the given provider, defaulting to the Codex home path. */
+function workerConfigHome(provider?: CliProvider): string {
+  return provider ? cliConfigHome(provider) : (process.env.CODEX_HOME || join(homedir(), '.codex'));
+}
+
+/**
+ * Return the two skill search paths as instruction-text strings:
+ *   [0] global:  e.g. ~/.codex/skills/worker/SKILL.md
+ *   [1] project: e.g. <leaderCwd>/.codex/skills/worker/SKILL.md
+ *
+ * When a provider is supplied the paths honour its `skillsDir()` and
+ * `projectSkillsDir()`.  When omitted (legacy default) the paths
+ * fall back to the Codex convention.
+ */
+function workerSkillPaths(
+  provider: CliProvider | undefined,
+  leaderCwd: string,
+): [global: string, project: string] {
+  const globalDir = join(workerConfigHome(provider), 'skills');
+  const projectDir = provider
+    ? provider.projectSkillsDir(leaderCwd)
+    : join(leaderCwd, '.codex', 'skills');
+  return [
+    join(globalDir, 'worker', 'SKILL.md'),
+    join(projectDir, 'worker', 'SKILL.md'),
+  ];
+}
+
+/**
+ * Same as `workerSkillPaths` but for instruction text where `leaderCwd` is a
+ * placeholder token (`<leader_cwd>`) that the worker resolves at runtime.
+ */
+function workerSkillPathsPlaceholder(
+  provider?: CliProvider,
+): [global: string, project: string] {
+  return workerSkillPaths(provider, '<leader_cwd>');
 }
 
 interface WorkerRootAgentsBackup {
@@ -83,8 +130,8 @@ This file is generated for a live OMX team worker run and is disposable.
 ## Protocol
 1. Read your inbox at \`${options.teamStateRoot}/team/${options.teamName}/workers/${options.workerName}/inbox.md\`.
 2. Load the worker skill from the first existing path:
-   - \`${"${CODEX_HOME:-~/.codex}"}/skills/worker/SKILL.md\`
-   - \`${options.leaderCwd}/.codex/skills/worker/SKILL.md\`
+   - \`${workerSkillPaths(options.provider, options.leaderCwd)[0]}\`
+   - \`${workerSkillPaths(options.provider, options.leaderCwd)[1]}\`
    - \`${options.leaderCwd}/skills/worker/SKILL.md\`
 3. Send startup ACK before task work:
 
@@ -171,8 +218,9 @@ async function ensureGitInfoExcludePattern(
 export async function writeWorkerWorktreeRootAgentsFile(
   options: WorkerRootAgentsOptions,
 ): Promise<string> {
-  const agentsPath = join(options.worktreePath, "AGENTS.md");
-  const tracked = isTracked(options.worktreePath, "AGENTS.md");
+  const guidanceFile = guidanceFileName(options.provider);
+  const agentsPath = join(options.worktreePath, guidanceFile);
+  const tracked = isTracked(options.worktreePath, guidanceFile);
   const existed = existsSync(agentsPath);
   const previousContent = existed
     ? await readFile(agentsPath, "utf-8")
@@ -181,7 +229,7 @@ export async function writeWorkerWorktreeRootAgentsFile(
 
   if (tracked) {
     try {
-      execFileSync("git", ["update-index", "--skip-worktree", "AGENTS.md"], {
+      execFileSync("git", ["update-index", "--skip-worktree", guidanceFile], {
         cwd: options.worktreePath,
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "pipe"],
@@ -192,7 +240,7 @@ export async function writeWorkerWorktreeRootAgentsFile(
       skipWorktreeApplied = false;
     }
   } else {
-    await ensureGitInfoExcludePattern(options.worktreePath, "AGENTS.md");
+    await ensureGitInfoExcludePattern(options.worktreePath, guidanceFile);
   }
 
   const backup: WorkerRootAgentsBackup = {
@@ -222,8 +270,10 @@ export async function removeWorkerWorktreeRootAgentsFile(
   workerName: string,
   teamStateRoot: string,
   worktreePath: string,
+  provider?: CliProvider,
 ): Promise<void> {
-  const agentsPath = join(worktreePath, "AGENTS.md");
+  const guidanceFile = guidanceFileName(provider);
+  const agentsPath = join(worktreePath, guidanceFile);
   const backupPath = buildWorkerRootAgentsBackupPath(
     teamStateRoot,
     teamName,
@@ -246,7 +296,7 @@ export async function removeWorkerWorktreeRootAgentsFile(
 
   if (backup.tracked && backup.skipWorktreeApplied) {
     try {
-      execFileSync("git", ["update-index", "--no-skip-worktree", "AGENTS.md"], {
+      execFileSync("git", ["update-index", "--no-skip-worktree", guidanceFile], {
         cwd: worktreePath,
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "pipe"],
@@ -290,7 +340,8 @@ When marking completion, include structured verification evidence in your task r
  * This is the SAME for all workers -- no per-worker identity.
  * Per-worker context goes in the inbox file.
  */
-export function generateWorkerOverlay(teamName: string): string {
+export function generateWorkerOverlay(teamName: string, provider?: CliProvider): string {
+  const [globalSkill, projectSkill] = workerSkillPathsPlaceholder(provider);
   return `${TEAM_OVERLAY_START}
 <team_worker_protocol>
 You are a team worker in team "${teamName}". Your identity and assigned tasks are in your inbox file.
@@ -298,8 +349,8 @@ You are a team worker in team "${teamName}". Your identity and assigned tasks ar
 ## Protocol
 1. Read your inbox file at the path provided in your first instruction
 2. Load the worker skill instructions from the first path that exists:
-   - \`${"${CODEX_HOME:-~/.codex}"}/skills/worker/SKILL.md\`
-   - \`<leader_cwd>/.codex/skills/worker/SKILL.md\`
+   - \`${globalSkill}\`
+   - \`${projectSkill}\`
    - \`<leader_cwd>/skills/worker/SKILL.md\` (repo fallback)
 3. Send an ACK to the lead using CLI interop \`omx team api send-message --json\` (to_worker="leader-fixed") once initialized
 4. Resolve canonical team state root in this order:
@@ -348,7 +399,7 @@ When your mailbox receives a message, process delivery explicitly:
 - If you need to modify a shared file, report to the lead by writing to your status file with state "blocked"
 - Do NOT write lifecycle fields (\`status\`, \`owner\`, \`result\`, \`error\`) directly in task files; use claim-safe lifecycle APIs
 - If blocked, write {"state": "blocked", "reason": "..."} to your status file
-- You may spawn Codex native subagents when parallel execution improves throughput.
+- You may spawn native subagents when parallel execution improves throughput.
 - Use subagents only for independent, bounded subtasks that can run safely within this worker pane.
 </team_worker_protocol>
 ${TEAM_OVERLAY_END}`;
@@ -439,10 +490,13 @@ export async function writeTeamWorkerInstructionsFile(
   teamName: string,
   cwd: string,
   overlay: string,
+  provider?: CliProvider,
 ): Promise<string> {
   const baseParts: string[] = [];
-  const userAgentsPath = join(codexHome(), "AGENTS.md");
-  const sourcePaths = [userAgentsPath, join(cwd, "AGENTS.md")];
+  const guidanceFile = guidanceFileName(provider);
+  const configHomeDir = workerConfigHome(provider);
+  const userAgentsPath = join(configHomeDir, guidanceFile);
+  const sourcePaths = [userAgentsPath, join(cwd, guidanceFile)];
   const seenPaths = new Set<string>();
   const installedSkills = await listInstalledSkillDirectories(cwd);
   const projectSkillNames = new Set(
@@ -501,7 +555,9 @@ export async function writeWorkerRoleInstructionsFile(
   baseInstructionsPath: string,
   workerRole: string,
   rolePromptContent: string,
+  provider?: CliProvider,
 ): Promise<string> {
+  const guidanceFile = guidanceFileName(provider);
   const base = await readFile(baseInstructionsPath, "utf-8").catch(() => "");
   const roleOverlay = `
 <!-- OMX:TEAM:ROLE:START -->
@@ -526,7 +582,7 @@ ${roleOverlay}`
     teamName,
     "workers",
     workerName,
-    "AGENTS.md",
+    guidanceFile,
   );
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, composed);
@@ -646,6 +702,7 @@ export function generateInitialInbox(
     workerRole?: string;
     rolePromptContent?: string;
     worktreeRootAgentsCanonical?: boolean;
+    provider?: CliProvider;
   } = {},
 ): string {
   const taskList = tasks
@@ -684,8 +741,8 @@ ${taskList}
 ## Instructions
 
 1. Load and follow the worker skill from the first existing path:
-   - \`${"${CODEX_HOME:-~/.codex}"}/skills/worker/SKILL.md\`
-   - \`${leaderCwd}/.codex/skills/worker/SKILL.md\`
+   - \`${workerSkillPaths(options.provider, leaderCwd)[0]}\`
+   - \`${workerSkillPaths(options.provider, leaderCwd)[1]}\`
    - \`${leaderCwd}/skills/worker/SKILL.md\` (repo fallback)
 2. Send startup ACK to the lead mailbox BEFORE any task work (run this exact command):
 
@@ -731,7 +788,7 @@ ${buildVerificationSection("each assigned task")}
 - Only edit files described in your task descriptions
 - Do NOT edit files that belong to other workers
 - If you need to modify a shared/common file, write \`{"state": "blocked", "reason": "need to edit shared file X"}\` to your status file and wait
-- You may spawn Codex native subagents when parallel execution improves throughput.
+- You may spawn native subagents when parallel execution improves throughput.
 - Use subagents only for independent, bounded subtasks that can run safely within this worker pane.
 ${specializationSection}`;
 }
@@ -791,9 +848,9 @@ All tasks are complete. Please wrap up any remaining work and respond with a shu
      \`{\"status\":\"accept\",\"reason\":\"ok\",\"updated_at\":\"<iso>\"}\`
    - Reject:
      \`{\"status\":\"reject\",\"reason\":\"still working\",\"updated_at\":\"<iso>\"}\`
-3. After writing the ack, exit your Codex session.
+3. After writing the ack, exit your agent session.
 
-Type \`exit\` or press Ctrl+C to end your Codex session.
+Type \`exit\` or press Ctrl+C to end your agent session.
 `;
 }
 

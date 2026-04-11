@@ -23,6 +23,7 @@ import {
   teardownWorkerPanes,
   buildWorkerStartupCommand,
   resolveTeamWorkerCliPlan,
+  type TeamWorkerCli,
 } from './tmux-session.js';
 import { execFileSync, spawnSync } from 'child_process';
 import {
@@ -67,6 +68,7 @@ import {
   type TeamReasoningEffort,
 } from './model-contract.js';
 import { resolveCanonicalTeamStateRoot } from './state-root.js';
+import { globalRegistry } from '../providers/index.js';
 import {
   ensureWorktree,
   planWorktreeTarget,
@@ -169,7 +171,7 @@ async function notifyWorkerPaneOutcome(
   workerIndex: number,
   message: string,
   paneId?: string,
-  workerCli?: 'codex' | 'claude' | 'gemini',
+  workerCli?: TeamWorkerCli,
 ): Promise<DispatchOutcome> {
   try {
     await sendToWorker(sessionName, workerIndex, message, paneId, workerCli);
@@ -248,7 +250,7 @@ export async function scaleUp(
 
     const rollbackScaleUp = async (
       error: string,
-      context: { paneId?: string; workerName?: string; worktreePath?: string } = {},
+      context: { paneId?: string; workerName?: string; worktreePath?: string; workerCli?: string } = {},
     ): Promise<ScaleError> => {
       for (const w of addedWorkers) {
         const idx = config.workers.findIndex((worker) => worker.name === w.name);
@@ -263,7 +265,8 @@ export async function scaleUp(
           }
         } catch {}
         if (w.worktree_path) {
-          await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, teamStateRoot, w.worktree_path).catch(() => {});
+          const wProvider = w.worker_cli && globalRegistry.has(w.worker_cli) ? globalRegistry.get(w.worker_cli) : undefined;
+          await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, teamStateRoot, w.worktree_path, wProvider).catch(() => {});
         }
       }
 
@@ -272,11 +275,13 @@ export async function scaleUp(
         context.worktreePath &&
         !addedWorkers.some((worker) => worker.name === context.workerName)
       ) {
+        const ctxProvider = context.workerCli && globalRegistry.has(context.workerCli) ? globalRegistry.get(context.workerCli) : undefined;
         await removeWorkerWorktreeRootAgentsFile(
           sanitized,
           context.workerName,
           teamStateRoot,
           context.worktreePath,
+          ctxProvider,
         ).catch(() => {});
       }
 
@@ -409,7 +414,7 @@ export async function scaleUp(
       if (result.status !== 0) {
         return await rollbackScaleUp(
           `Failed to create tmux pane for ${workerName}: ${(result.stderr || '').trim()}`,
-          { workerName, worktreePath: workerWorkspace?.worktreePath },
+          { workerName, worktreePath: workerWorkspace?.worktreePath, workerCli: workerCliPlan[i] },
         );
       }
 
@@ -419,6 +424,7 @@ export async function scaleUp(
           paneId,
           workerName,
           worktreePath: workerWorkspace?.worktreePath,
+          workerCli: workerCliPlan[i],
         });
       }
 
@@ -451,7 +457,7 @@ export async function scaleUp(
       const readyTimeoutMs = resolveWorkerReadyTimeoutMs(env);
       const skipReadyWait = env.OMX_TEAM_SKIP_READY_WAIT === '1';
       if (!skipReadyWait) {
-        const ready = waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId);
+        const ready = waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId, workerCliPlan[i]);
         if (!ready) {
           console.log(`[omx:scaling] Warning: worker ${workerName} did not become ready within timeout`);
         }
@@ -460,12 +466,14 @@ export async function scaleUp(
       // Get assigned tasks for this worker
       const workerTasks = persistedTasks.filter(t => t.owner === workerName);
 
+      const workerProvider = workerCliPlan[i] && globalRegistry.has(workerCliPlan[i]) ? globalRegistry.get(workerCliPlan[i]) : undefined;
       const inbox = generateInitialInbox(workerName, sanitized, agentType, workerTasks, {
         teamStateRoot,
         leaderCwd,
         workerRole,
         rolePromptContent: rawRolePromptContent ?? undefined,
         worktreeRootAgentsCanonical: Boolean(workerWorkspace?.worktreePath),
+        provider: workerProvider,
       });
 
       const trigger = generateTriggerMessage(
@@ -579,7 +587,7 @@ export async function scaleUp(
       }
       // Retry dispatch once if a trust prompt is blocking the worker pane (fixes #393).
       if (!outcome.ok && dismissTrustPromptIfPresent(sessionName, workerIndex, paneId)) {
-        waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId);
+        waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId, workerCliPlan[i]);
         const retry = await notifyWorkerPaneOutcome(sessionName, workerIndex, trigger, paneId, workerCliPlan[i]);
         if (retry.ok) {
           outcome = retry;
@@ -590,6 +598,7 @@ export async function scaleUp(
           paneId,
           workerName,
           worktreePath: workerWorkspace?.worktreePath,
+          workerCli: workerCliPlan[i],
         });
       }
 
@@ -770,7 +779,8 @@ export async function scaleDown(
 
     for (const w of targetWorkers) {
       if (w.worktree_path) {
-        await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, w.team_state_root ?? config.team_state_root ?? resolveCanonicalTeamStateRoot(leaderCwd), w.worktree_path).catch(() => {});
+        const wProvider = w.worker_cli && globalRegistry.has(w.worker_cli) ? globalRegistry.get(w.worker_cli) : undefined;
+        await removeWorkerWorktreeRootAgentsFile(sanitized, w.name, w.team_state_root ?? config.team_state_root ?? resolveCanonicalTeamStateRoot(leaderCwd), w.worktree_path, wProvider).catch(() => {});
       }
       removedNames.push(w.name);
     }

@@ -21,6 +21,7 @@ bin/omx-explore-harness.exe
 bin/omx-explore-harness.meta.json
 
 # Local runtime bridge artifacts (generated)
+prd.json
 authority.json
 backlog.json
 dispatch.json
